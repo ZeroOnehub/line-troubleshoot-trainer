@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排障道场 · 第一版原型（v1，像做题）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+/* 布局：工位终端式单屏。顶部是工单条（计时、星级），中间左侧“现场”（HMI 曲线 + 线索 + 设备状态），右侧“对话”（操作工 / AI 老师傅），底部是排查动作台。 */
+:root {
+  --bg: #E5E8E3;
+  --panel: #F6F7F3;
+  --panel-2: #ECEFE9;
+  --ink: #1B2220;
+  --muted: #5B6661;
+  --line: #C6CCC5;
+  --accent: #C4521A;
+  --accent-ink: #FFF6EE;
+  --accent-soft: #F3DDCF;
+  --ok: #2B7A50;
+  --ok-soft: #D9EADF;
+  --warn: #9A700A;
+  --warn-soft: #F0E5C4;
+  --danger: #B3302A;
+  --danger-soft: #F3D8D4;
+  --hmi: #0F1E1B;
+  --hmi-ink: #BFE2D1;
+  --hmi-dim: #6E9488;
+  --hmi-grid: #22403A;
+  --hmi-band: #1F4A3A;
+  --hmi-actual: #FF8A4C;
+  --shadow: 0 1px 0 rgba(27,34,32,.06), 0 8px 24px -12px rgba(27,34,32,.25);
+  --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --f-num: "Barlow Condensed", "DIN Alternate", "Arial Narrow", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111615; --panel: #1A201E; --panel-2: #212927; --ink: #E3E8E4; --muted: #93A099; --line: #2D3734;
+    --accent: #E9793A; --accent-ink: #1C0F07; --accent-soft: #3A2416;
+    --ok: #5CBF89; --ok-soft: #163326; --warn: #D8AD3D; --warn-soft: #342A11; --danger: #E8645B; --danger-soft: #3B1A17;
+    --hmi: #0A1412; --hmi-ink: #BFE2D1; --hmi-dim: #5F857A; --hmi-grid: #1C352F; --hmi-band: #17402F; --hmi-actual: #FF8A4C;
+    --shadow: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111615; --panel: #1A201E; --panel-2: #212927; --ink: #E3E8E4; --muted: #93A099; --line: #2D3734;
+  --accent: #E9793A; --accent-ink: #1C0F07; --accent-soft: #3A2416;
+  --ok: #5CBF89; --ok-soft: #163326; --warn: #D8AD3D; --warn-soft: #342A11; --danger: #E8645B; --danger-soft: #3B1A17;
+  --hmi: #0A1412; --hmi-ink: #BFE2D1; --hmi-dim: #5F857A; --hmi-grid: #1C352F; --hmi-band: #17402F; --hmi-actual: #FF8A4C;
+  --shadow: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 28px;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+.app { max-width: 1180px; margin: 0 auto; display: grid; gap: 14px; }
+
+/* 工单条 */
+.bar {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 12px 16px; box-shadow: var(--shadow);
+}
+.brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; min-width: 0; }
+.brand b { font-weight: 900; font-size: 20px; letter-spacing: .04em; }
+.brand .lvl { color: var(--muted); font-size: 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: 12px; letter-spacing: .04em; border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.chip.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.chip.danger { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.chip.accent { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.meters { display: flex; align-items: center; gap: 18px; }
+.timer { display: grid; justify-items: end; line-height: 1; position: relative; }
+.timer small { font-size: 11px; letter-spacing: .12em; color: var(--muted); }
+.timer .num { font-family: var(--f-num); font-weight: 700; font-size: 40px; font-variant-numeric: tabular-nums; color: var(--accent); }
+.timer .plus {
+  position: absolute; right: 0; top: -6px; font-family: var(--f-num); font-weight: 700; font-size: 18px;
+  color: var(--danger); opacity: 0; transform: translateY(0); pointer-events: none;
+}
+.timer .plus.show { animation: rise 1.2s ease-out forwards; }
+@keyframes rise { 0% { opacity: 0; transform: translateY(6px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }
+.stars { font-size: 22px; letter-spacing: 2px; color: var(--warn); white-space: nowrap; }
+.stars .off { color: var(--line); }
+.proto-note { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+
+/* 主区 */
+.stage { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.card-head h2 { font-size: 15px; font-weight: 700; letter-spacing: .06em; }
+.andon { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.lamp { width: 12px; height: 12px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.lamp.blink { animation: blink 1s steps(2, start) infinite; }
+.lamp.locked { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); animation: none; }
+.lamp.done { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); animation: none; }
+@keyframes blink { to { opacity: .25; } }
+
+.hmi { position: relative; background: var(--hmi); border-radius: 8px; padding: 10px 10px 6px; color: var(--hmi-ink); }
+.hmi-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-family: var(--f-mono); font-size: 12px; color: var(--hmi-dim); }
+.hmi-top .alarm { color: var(--hmi-actual); font-weight: 600; }
+.hmi svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.hmi svg text { font-family: var(--f-mono); }
+.hmi .cover {
+  position: absolute; inset: 30px 10px 8px; display: grid; place-items: center; text-align: center;
+  background: color-mix(in srgb, var(--hmi) 72%, transparent); backdrop-filter: blur(3px); border-radius: 6px;
+  font-size: 14px; color: var(--hmi-ink); padding: 12px;
+}
+.hmi .readout { font-family: var(--f-mono); font-size: 12px; color: var(--hmi-ink); padding-top: 4px; }
+
+.status { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 12px; font-size: 14px; }
+.status .label { color: var(--muted); }
+.clues { margin-top: 12px; }
+.clues h3 { font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: .08em; margin-bottom: 6px; }
+.clues ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.clues li { background: var(--panel-2); border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+.clues li.empty { color: var(--muted); background: transparent; border: 1px dashed var(--line); }
+
+/* 对话 */
+.talk { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.log { display: grid; align-content: start; gap: 10px; max-height: 360px; min-height: 240px; overflow-y: auto; padding-right: 4px; }
+.msg { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: start; }
+.avatar {
+  width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; background: var(--panel-2); color: var(--muted);
+}
+.msg.master .avatar { background: var(--accent-soft); color: var(--accent); }
+.msg.op .avatar { background: var(--panel-2); color: var(--ink); }
+.msg.sys .avatar { background: transparent; border: 1px dashed var(--line); }
+.msg .who { font-size: 12px; color: var(--muted); }
+.msg .text { font-size: 14px; }
+.msg.me { grid-template-columns: minmax(0, 1fr) 34px; }
+.msg.me .bubble { text-align: right; }
+.msg.me .avatar { grid-column: 2; grid-row: 1; background: var(--ink); color: var(--panel); }
+.msg.me .bubble { grid-column: 1; grid-row: 1; }
+.ask { display: flex; gap: 8px; margin-top: 12px; }
+.ask input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 8px 10px;
+}
+.btn {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 14px; font-weight: 500;
+  transition: background .15s, border-color .15s;
+}
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:disabled { cursor: not-allowed; opacity: .5; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: var(--accent); }
+.btn.ghost { background: transparent; }
+.hint-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+
+/* 动作台 */
+.deck { display: grid; gap: 10px; }
+.deck-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.deck-head h2 { font-size: 15px; letter-spacing: .06em; }
+.deck-head p { margin: 0; font-size: 13px; color: var(--muted); }
+.actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.act {
+  display: grid; gap: 4px; text-align: left; padding: 10px 12px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line); min-height: 70px;
+}
+.act:hover:not(:disabled) { border-color: var(--ink); background: var(--panel-2); }
+.act .name { font-weight: 700; font-size: 14px; }
+.act .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.act .cost { font-family: var(--f-mono); }
+.act:disabled { cursor: default; opacity: .55; }
+.act.done .name::after { content: "  ✓"; color: var(--ok); }
+.act.moving .tag { color: var(--danger); }
+.judge-bar { display: flex; justify-content: flex-end; }
+
+/* 浮层 */
+.overlay {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 55%, rgba(0,0,0,.45));
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+}
+.sheet {
+  width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 22px 20px; box-shadow: var(--shadow); display: grid; gap: 14px; max-height: 100%; overflow-y: auto;
+}
+.sheet.wide { width: min(1000px, 100%); }
+.sheet h2 { font-size: 22px; font-weight: 900; }
+.eyebrow { font-size: 12px; letter-spacing: .14em; color: var(--muted); }
+.ticket { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; background: var(--panel-2); border-radius: 8px; padding: 12px 14px; }
+.ticket div { display: grid; }
+.ticket span { font-size: 12px; color: var(--muted); }
+.ticket strong { font-weight: 700; }
+.ticket .mono { font-family: var(--f-mono); }
+.quote { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; color: var(--ink); }
+.rules { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.row-end { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 6px; }
+legend { font-weight: 700; font-size: 14px; padding: 0 6px; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; font-size: 14px; }
+.opt:hover { background: var(--panel-2); }
+.opt input { margin-top: 5px; accent-color: var(--accent); }
+textarea { width: 100%; min-height: 60px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 8px 10px; resize: vertical; }
+.small { font-size: 12px; color: var(--muted); }
+.feedback { border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.feedback.bad { background: var(--danger-soft); color: var(--ink); }
+
+/* 红线 */
+.redline-head { display: grid; gap: 6px; border-left: 6px solid var(--danger); padding-left: 14px; }
+.redline-head h2 { color: var(--danger); }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+
+/* 复盘 */
+.result { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: end; }
+.result .big { font-family: var(--f-num); font-weight: 700; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.result .cap { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.result .stars { font-size: 30px; }
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.path { background: var(--panel-2); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; }
+.path h3 { font-size: 14px; }
+.path ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.path li .t { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.lessons { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.lesson { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; }
+.lesson b { font-size: 14px; }
+.lesson p { margin: 0; font-size: 13px; color: var(--muted); }
+.deduct { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 4px; }
+.gov { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.toast {
+  position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  z-index: 60; background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px);
+}
+
+@media (max-width: 860px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .compare { grid-template-columns: minmax(0, 1fr); }
+  .log { max-height: 300px; }
+}
+@media (max-width: 520px) {
+  .bar { grid-template-columns: minmax(0, 1fr); }
+  .meters { justify-content: space-between; }
+  .timer { justify-items: start; }
+  .timer .plus { left: 110px; right: auto; }
+  .timer .num { font-size: 34px; }
+  .sheet { padding: 18px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lamp.blink, .timer .plus.show { animation: none; }
+  .timer .plus.show { opacity: 1; }
+}
+</style>
+
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand">
+      <b>排障道场</b>
+      <span class="lvl">装配线 · 3 号拧紧工位 · 扭矩低于下限</span>
+      <span class="chip">入门</span>
+    </div>
+    <div class="meters">
+      <div class="timer" aria-live="polite">
+        <small>模拟停机</small>
+        <span class="num" id="timer">00:00</span>
+        <span class="plus" id="plus"></span>
+      </div>
+      <div class="stars" id="stars" aria-label="当前星级"></div>
+    </div>
+    <p class="proto-note">原型 · 示例关卡，数据为示意，不代表真实设备。老师傅和操作工的回复为预设规则；正式版由本地大模型生成，判对错由审核过的剧本决定。</p>
+  </header>
+
+  <main class="stage">
+    <section class="card" aria-labelledby="scene-title">
+      <div class="card-head">
+        <h2 id="scene-title">现场</h2>
+        <span class="andon"><span class="lamp blink" id="lamp"></span><span id="lamp-text">报警中 · 产线停止</span></span>
+      </div>
+      <div class="hmi">
+        <div class="hmi-top">
+          <span>STATION 03 · 拧紧轴 HMI</span>
+          <span class="alarm">TQ-LOW 扭矩低于下限 ×2</span>
+        </div>
+        <svg id="chart" viewBox="0 0 340 180" role="img" aria-label="扭矩-角度曲线"></svg>
+        <div class="readout" id="readout"></div>
+        <div class="cover" id="cover">还没看曲线。<br>点下方「看扭矩曲线」查看本次拧紧数据。</div>
+      </div>
+      <div class="status">
+        <span><span class="label">设备状态：</span><strong id="equip">报警停止 · 未上锁</strong></span>
+        <span><span class="label">不合格品：</span><strong id="ng">2 件</strong></span>
+      </div>
+      <div class="clues">
+        <h3>已知线索</h3>
+        <ul id="clues"></ul>
+      </div>
+    </section>
+
+    <section class="card talk" aria-labelledby="talk-title">
+      <div class="card-head">
+        <h2 id="talk-title">对话</h2>
+        <span class="chip accent">AI 老师傅 · 示例师傅出题</span>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <form class="ask" id="ask-form">
+        <label for="ask-input" class="small" hidden>问老师傅</label>
+        <input id="ask-input" type="text" placeholder="问老师傅，例如：套筒要怎么看？" autocomplete="off">
+        <button class="btn" type="submit" id="ask-send">问</button>
+      </form>
+      <div class="hint-row">
+        <span id="hint-left">求助会扣 1 星，最多 3 次</span>
+        <button class="btn ghost" type="button" id="hint-btn">求助老师傅</button>
+      </div>
+    </section>
+  </main>
+
+  <section class="card deck" aria-labelledby="deck-title">
+    <div class="deck-head">
+      <h2 id="deck-title">排查动作</h2>
+      <p>每个动作都会消耗模拟停机时间。标“运动部件”的动作要先停机上锁。</p>
+    </div>
+    <div class="actions" id="actions"></div>
+    <div class="judge-bar"><button class="btn primary" type="button" id="judge-btn">判定原因和措施</button></div>
+  </section>
+</div>
+
+<div class="overlay" id="ov-intro" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <span class="eyebrow">维修工单 · 示例</span>
+    <h2 id="intro-title">3 号拧紧工位报扭矩低于下限，产线停了</h2>
+    <div class="ticket">
+      <div><span>工单号</span><strong class="mono">WO-0314（示例）</strong></div>
+      <div><span>时间</span><strong>夜班 02:14</strong></div>
+      <div><span>工位</span><strong>装配线 · 3 号拧紧工位</strong></div>
+      <div><span>报警</span><strong class="mono">TQ-LOW ×2</strong></div>
+    </div>
+    <p class="quote">操作工：“刚换了一箱螺栓，打第一颗就报了，声音听着跟平时差不多。”</p>
+    <ol class="rules">
+      <li>找出根本原因，并给出处理措施。</li>
+      <li>停机计时从接单开始。每个排查动作都会增加停机时间，想清楚再动手。</li>
+      <li><strong>安全红线：</strong>没有停机上锁挂牌就接触运动部件，直接判定失败。</li>
+      <li>卡住可以求助老师傅，每次扣 1 星。</li>
+    </ol>
+    <div class="row-end"><button class="btn primary" type="button" id="start-btn">接单，开始排障</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-judge" hidden>
+  <form class="sheet" id="judge-form" role="dialog" aria-modal="true" aria-labelledby="judge-title">
+    <span class="eyebrow">判定 · 计时暂停</span>
+    <h2 id="judge-title">你认为根本原因是什么，怎么处理？</h2>
+    <fieldset>
+      <legend>根本原因</legend>
+      <label class="opt"><input type="radio" name="cause" value="socket" id="c-socket"> 套筒磨损，拧紧时打滑</label>
+      <label class="opt"><input type="radio" name="cause" value="bolt" id="c-bolt"> 新批次螺栓不良</label>
+      <label class="opt"><input type="radio" name="cause" value="sensor" id="c-sensor"> 扭矩传感器漂移，需要重新标定</label>
+      <label class="opt"><input type="radio" name="cause" value="program" id="c-program"> 拧紧程序参数被改动</label>
+      <label class="small" for="own">或者用自己的话说原因（原型里用关键词模拟 AI 判断）</label>
+      <textarea id="own" placeholder="例如：头子用久了，打滑"></textarea>
+    </fieldset>
+    <fieldset>
+      <legend>处理措施</legend>
+      <label class="opt"><input type="radio" name="fix" value="replace" id="m-replace"> 停机上锁挂牌 → 更换套筒 → 首件确认，并记录套筒更换</label>
+      <label class="opt"><input type="radio" name="fix" value="calib" id="m-calib"> 重新标定扭矩传感器后继续生产</label>
+      <label class="opt"><input type="radio" name="fix" value="return" id="m-return"> 整箱螺栓退回，换回旧批次</label>
+      <label class="opt"><input type="radio" name="fix" value="reset" id="m-reset"> 复位报警，继续生产并加强观察</label>
+    </fieldset>
+    <div class="feedback bad" id="judge-msg" hidden></div>
+    <div class="row-end">
+      <button class="btn" type="button" id="judge-cancel">再查查</button>
+      <button class="btn primary" type="submit">提交判定</button>
+    </div>
+  </form>
+</div>
+
+<div class="overlay" id="ov-fail" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="fail-title">
+    <div class="redline-head">
+      <span class="eyebrow">安全红线 · 本关失败</span>
+      <h2 id="fail-title">没有停机上锁，就接触了运动部件</h2>
+      <p id="fail-reason" style="margin:0"></p>
+    </div>
+    <p style="margin:0">在真实现场，拧紧轴可能被误启动。碰任何运动部件之前，必须先完成以下步骤：</p>
+    <ol class="steps">
+      <li><strong>停机：</strong>按规程停止设备。</li>
+      <li><strong>断能：</strong>切断电源、气源等能量。</li>
+      <li><strong>上锁挂牌：</strong>在能量隔离点上锁，挂“禁止操作”牌。</li>
+      <li><strong>验证：</strong>确认设备无法启动、没有残余能量。</li>
+      <li><strong>作业：</strong>完成后按规程解锁、恢复。</li>
+    </ol>
+    <p class="small" style="margin:0">示例规程，以工厂安全规程为准。安全内容为固定文本，不由 AI 生成。</p>
+    <div class="row-end">
+      <button class="btn" type="button" id="fail-review">查看复盘</button>
+      <button class="btn primary" type="button" id="fail-retry">重新开始</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-review" hidden>
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="review-title" id="review"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- 关卡剧本（正式版来自审核过的剧本库） ----------
+  const ACTIONS = [
+    { id: "curve", name: "看扭矩曲线", cost: 60, kind: "key",
+      clue: "扭矩曲线：前段正常，后段扭矩上不去、角度还在走，像打滑",
+      lines: [["master", "好习惯，动手之前先看曲线。你看后半段，像拧不动，还是像打滑？"]] },
+    { id: "ask", name: "问操作工最近换过什么", cost: 30, kind: "key",
+      clue: "刚换了新批次螺栓；套筒很久没换过",
+      lines: [["op", "就换了这箱螺栓。套筒？好像很久没换了，我没见人换过。"]] },
+    { id: "record", name: "查这台设备的维修记录", cost: 120, kind: "useful",
+      clue: "套筒上次更换约 5 个月前，同类工位一般 3 个月一换（示例）",
+      lines: [["sys", "维修记录：3 号工位套筒上次更换约 5 个月前。"]] },
+    { id: "bolt", name: "核对螺栓批次和规格", cost: 120, kind: "exclude",
+      clue: "新批次螺栓规格正确，来料检验合格（已排除）",
+      lines: [["sys", "核对结果：螺栓规格与作业指导书一致，来料检验合格。"]] },
+    { id: "lock", name: "停机并上锁挂牌", cost: 90, kind: "safety",
+      clue: "设备已停机，能量已隔离，已上锁挂牌",
+      lines: [["master", "对，先上锁，再碰东西。"]] },
+    { id: "socket", name: "检查套筒", cost: 180, kind: "key", moving: true,
+      clue: "套筒内六角明显磨损，棱角发圆",
+      lines: [["sys", "检查结果：套筒内六角磨损明显，棱角发圆。"], ["master", "看到了吧，套筒是消耗件。现在你能下结论了。"]] },
+    { id: "calib", name: "重新标定扭矩传感器", cost: 1200, kind: "detour",
+      clue: "传感器标定正常，问题没解决（弯路）",
+      lines: [["sys", "标定完成：偏差在允许范围内。"], ["master", "标定一次 20 分钟。曲线都没细看就去标定，产线就白停了。"]] },
+    { id: "reset", name: "复位报警，再打一颗试试", cost: 120, kind: "detour", ng: 1,
+      clue: "复位后再打一颗，仍报扭矩低于下限，又多一件不合格品（弯路）",
+      lines: [["sys", "复位后再打一颗：TQ-LOW，又一件不合格。"], ["master", "复位不是排查。连着报两次，就别再拿工件试了。"]] },
+    { id: "grab", name: "不停机，直接伸手取下套筒", cost: 0, kind: "redline", moving: true }
+  ];
+  const BEST = [
+    ["看扭矩曲线", 60, "先看数据，判断是“拧不动”还是“打滑”"],
+    ["问操作工最近换过什么", 30, "把“换螺栓”和“套筒很久没换”都问出来"],
+    ["停机并上锁挂牌", 90, "碰运动部件之前先隔离能量"],
+    ["检查套筒", 180, "亲眼确认磨损，再下结论"]
+  ];
+  const BEST_SEC = BEST.reduce((s, b) => s + b[1], 0);
+  const HINTS = [
+    "曲线后半段没上去，你觉得是“拧不动”还是“打滑了”？",
+    "换螺栓和换套筒，哪个更可能让它打滑？查查这个工位多久没换套筒了。",
+    "去检查套筒。记住：碰运动部件之前，先停机、上锁、挂牌。"
+  ];
+  const CAUSE_FEEDBACK = {
+    bolt: "螺栓你核对过吗？来料检验是合格的。再看看曲线：拧不动是一种样子，打滑是另一种样子。",
+    sensor: "传感器漂移的话，曲线整体会偏，不会是后半段上不去、角度还在走。",
+    program: "程序被改的话，报的会是参数类报警。连着两次扭矩低，先想想消耗件。"
+  };
+  const FIX_FEEDBACK = {
+    calib: "原因找到了就别去标定了。套筒不换，标定完还会滑。",
+    return: "螺栓没问题，退了也解决不了。",
+    reset: "复位不是处理。套筒不换，下一颗还会报。"
+  };
+  const KIND_LABEL = { key: ["关键", "ok"], useful: ["有用", ""], exclude: ["排除项", ""], safety: ["安全", "ok"], detour: ["弯路", "warn"], redline: ["红线", "danger"], judge: ["误判", "warn"] };
+
+  // ---------- 评分（纯函数） ----------
+  function scoreRun(r) {
+    if (r.redline) return 0;
+    let s = r.simSec <= 9 * 60 ? 3 : r.simSec <= 18 * 60 ? 2 : 1;
+    s -= r.hintsUsed + r.wrong;
+    if (!r.socketChecked) s = Math.min(s, 2);
+    return Math.max(1, s);
+  }
+  window.__scoreRun = scoreRun;
+
+  // ---------- 状态 ----------
+  const fresh = () => ({
+    phase: "intro", simSec: 0, used: [], steps: [], clues: [], chat: [],
+    locked: false, curveSeen: false, socketChecked: false, hintsUsed: 0, wrong: 0, ng: 2,
+    redline: null, success: false, judgeMsg: ""
+  });
+  let S = fresh();
+
+  const $ = id => document.getElementById(id);
+  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fmt = s => { s = Math.max(0, Math.round(s)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
+  const mins = s => { const m = s / 60; return (Number.isInteger(m) ? m : m.toFixed(1)) + " 分钟"; };
+
+  // ---------- 曲线 ----------
+  function drawChart() {
+    const W = 340, H = 180, L = 34, R = 12, T = 10, B = 26;
+    const x = a => L + (a / 360) * (W - L - R);
+    const y = t => T + (1 - t / 30) * (H - T - B);
+    const ref = a => a < 40 ? 0 : Math.min(25, 25 * Math.pow((a - 40) / 220, 1.6));
+    const SLIP = 213;
+    const act = a => a < SLIP ? ref(a) : 14.6 + 3 * (((a - SLIP) % 18) / 18);
+    const pts = (f, to) => { const p = []; for (let a = 0; a <= to; a += 3) p.push((a ? "L" : "M") + x(a).toFixed(1) + " " + y(f(a)).toFixed(1)); return p.join(" "); };
+    const grid = 'style="stroke:var(--hmi-grid);stroke-width:1"';
+    const dim = 'style="fill:var(--hmi-dim)"';
+    let g = "";
+    for (const t of [0, 10, 20, 30]) g += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" ${grid}/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="10" ${dim}>${t}</text>`;
+    for (const a of [0, 90, 180, 270, 360]) g += `<line x1="${x(a)}" x2="${x(a)}" y1="${T}" y2="${H - B}" ${grid}/><text x="${x(a)}" y="${H - B + 14}" text-anchor="middle" font-size="10" ${dim}>${a}°</text>`;
+    const band = `<rect x="${L}" y="${y(27)}" width="${W - L - R}" height="${y(23) - y(27)}" style="fill:var(--hmi-band)"/>`;
+    const lim = `<line x1="${L}" x2="${W - R}" y1="${y(25)}" y2="${y(25)}" style="stroke:var(--hmi-dim);stroke-dasharray:3 3"/>
+      <text x="${W - R - 2}" y="${y(27) - 3}" text-anchor="end" font-size="9" ${dim}>上限 27</text>
+      <text x="${W - R - 2}" y="${y(23) + 10}" text-anchor="end" font-size="9" ${dim}>下限 23</text>`;
+    const refPath = `<path d="${pts(ref, 260)}" style="fill:none;stroke:var(--hmi-dim);stroke-width:1.5;stroke-dasharray:4 3"/>`;
+    const actPath = `<path d="${pts(act, 360)}" style="fill:none;stroke:var(--hmi-actual);stroke-width:2.2;stroke-linejoin:round"/>`;
+    const legend = `<g font-size="10"><line x1="${L + 8}" x2="${L + 26}" y1="${T + 10}" y2="${T + 10}" style="stroke:var(--hmi-actual);stroke-width:2.2"/><text x="${L + 30}" y="${T + 13}" style="fill:var(--hmi-ink)">本次</text><line x1="${L + 66}" x2="${L + 84}" y1="${T + 10}" y2="${T + 10}" style="stroke:var(--hmi-dim);stroke-width:1.5;stroke-dasharray:4 3"/><text x="${L + 88}" y="${T + 13}" style="fill:var(--hmi-ink)">正常参考</text></g>`;
+    const axis = `<text x="${L + 140}" y="${T + 13}" font-size="9" ${dim}>纵轴 N·m · 横轴 角度</text>`;
+    $("chart").innerHTML = g + band + lim + refPath + actPath + legend + axis;
+    $("readout").textContent = "峰值 17.6 N·m · 下限 23.0 · 角度到 360° 仍未达标";
+  }
+
+  // ---------- 渲染 ----------
+  function renderTimer() { $("timer").textContent = fmt(S.simSec); }
+  function liveStars() { return S.phase === "review" || S.phase === "fail" ? scoreRun(S) : scoreRun({ ...S, socketChecked: true }); }
+  function starHTML(n) { let h = ""; for (let i = 0; i < 3; i++) h += i < n ? "★" : '<span class="off">★</span>'; return h; }
+  function renderStars() { $("stars").innerHTML = starHTML(liveStars()); }
+
+  function renderScene() {
+    $("cover").hidden = S.curveSeen;
+    const lamp = $("lamp");
+    lamp.className = "lamp" + (S.success ? " done" : S.locked ? " locked" : " blink");
+    $("lamp-text").textContent = S.success ? "已恢复 · 首件合格" : S.locked ? "已停机 · 已上锁挂牌" : "报警中 · 产线停止";
+    $("equip").textContent = S.success ? "已恢复生产" : S.locked ? "已停机 · 已上锁挂牌" : "报警停止 · 未上锁";
+    $("ng").textContent = S.ng + " 件";
+    const ul = $("clues"); ul.innerHTML = "";
+    if (!S.clues.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "还没有线索。先收集信息，再动手。"; ul.appendChild(li); }
+    for (const c of S.clues) { const li = document.createElement("li"); li.textContent = c; ul.appendChild(li); }
+  }
+
+  const WHO = { master: ["师", "AI 老师傅"], op: ["操", "操作工"], sys: ["记", "现场结果"], me: ["我", "我"] };
+  function renderChat() {
+    const log = $("log"); log.innerHTML = "";
+    for (const [who, text] of S.chat) {
+      const m = document.createElement("div"); m.className = "msg " + who;
+      const av = document.createElement("div"); av.className = "avatar"; av.textContent = WHO[who][0];
+      const b = document.createElement("div"); b.className = "bubble";
+      const w = document.createElement("div"); w.className = "who"; w.textContent = WHO[who][1];
+      const t = document.createElement("div"); t.className = "text"; t.textContent = text;
+      b.append(w, t); m.append(av, b); log.appendChild(m);
+    }
+    log.scrollTop = log.scrollHeight;
+    const left = 3 - S.hintsUsed;
+    $("hint-left").textContent = left > 0 ? `求助会扣 1 星，还能求助 ${left} 次` : "求助次数已用完";
+    $("hint-btn").disabled = left <= 0 || S.phase !== "play";
+    $("ask-input").disabled = $("ask-send").disabled = S.phase !== "play";
+  }
+
+  function renderActions() {
+    const box = $("actions"); box.innerHTML = "";
+    for (const a of ACTIONS) {
+      if (a.id === "grab" && S.locked) continue;
+      const used = S.used.includes(a.id);
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "act" + (used ? " done" : "") + (a.moving ? " moving" : ""); b.id = "act-" + a.id;
+      b.disabled = used || S.phase !== "play" || (a.id === "lock" && S.locked);
+      const n = document.createElement("span"); n.className = "name"; n.textContent = a.name;
+      const meta = document.createElement("span"); meta.className = "meta";
+      const c = document.createElement("span"); c.className = "cost"; c.textContent = "⏱ " + (a.cost ? mins(a.cost) : "—");
+      meta.appendChild(c);
+      if (a.moving) { const tg = document.createElement("span"); tg.className = "tag"; tg.textContent = "⚠ 运动部件"; meta.appendChild(tg); }
+      b.append(n, meta);
+      b.addEventListener("click", () => doAction(a.id));
+      box.appendChild(b);
+    }
+    $("judge-btn").disabled = S.phase !== "play";
+  }
+
+  function renderOverlays() {
+    $("ov-intro").hidden = S.phase !== "intro";
+    $("ov-judge").hidden = S.phase !== "judge";
+    $("ov-fail").hidden = S.phase !== "fail";
+    $("ov-review").hidden = S.phase !== "review";
+    if (S.phase === "judge") {
+      const msg = $("judge-msg"); msg.hidden = !S.judgeMsg; msg.textContent = S.judgeMsg;
+    }
+    if (S.phase === "fail") $("fail-reason").textContent = S.redline;
+    if (S.phase === "review") renderReview();
+  }
+
+  function render() { renderTimer(); renderStars(); renderScene(); renderChat(); renderActions(); renderOverlays(); }
+
+  // ---------- 计时 ----------
+  let anim = 0, animating = false;
+  function addTime(sec) {
+    if (sec <= 0) return;
+    const from = S.simSec; S.simSec += sec;
+    const p = $("plus"); p.textContent = "+" + fmt(sec); p.classList.remove("show"); void p.offsetWidth; p.classList.add("show");
+    if (reduceMotion) { renderTimer(); return; }
+    cancelAnimationFrame(anim); animating = true;
+    const t0 = performance.now(), dur = 700;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      $("timer").textContent = fmt(from + (S.simSec - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) anim = requestAnimationFrame(step); else { animating = false; renderTimer(); }
+    };
+    anim = requestAnimationFrame(step);
+  }
+  setInterval(() => { if (S.phase === "play") { S.simSec += 1; if (!animating) renderTimer(); renderStars(); } }, 1000);
+
+  // ---------- 动作 ----------
+  function say(who, text) { S.chat.push([who, text]); }
+  function doAction(id) {
+    if (S.phase !== "play" || S.used.includes(id)) return;
+    const a = ACTIONS.find(x => x.id === id);
+    if (id === "grab") return redline(a.name, "你选择了“不停机，直接伸手取下套筒”。");
+    if (id === "socket" && !S.locked) return redline(a.name, "你在设备没有停机上锁的情况下，去检查套筒（运动部件）。");
+    S.used.push(id);
+    S.steps.push({ name: a.name, cost: a.cost, kind: a.kind });
+    say("me", a.name);
+    for (const [w, t] of a.lines) say(w, t);
+    if (a.clue) S.clues.push(a.clue);
+    if (id === "curve") { S.curveSeen = true; }
+    if (id === "lock") S.locked = true;
+    if (id === "socket") S.socketChecked = true;
+    if (a.ng) S.ng += a.ng;
+    addTime(a.cost);
+    render();
+  }
+  function redline(name, reason) {
+    S.steps.push({ name, cost: 0, kind: "redline" });
+    S.redline = reason;
+    S.phase = "fail";
+    render();
+  }
+
+  // ---------- 老师傅 ----------
+  function hint() {
+    if (S.phase !== "play" || S.hintsUsed >= 3) return;
+    say("me", "师傅，帮我看看？");
+    say("master", (!S.curveSeen && S.hintsUsed === 0 ? "先去看看扭矩曲线。" : "") + HINTS[S.hintsUsed]);
+    S.hintsUsed++;
+    render();
+  }
+  function reply(q) {
+    if (/答案|直接告诉|原因是什么|是什么问题|告诉我/.test(q)) return "我不直接说答案。你先说说：曲线是什么样的？最近换过什么？";
+    if (/上锁|挂牌|安全|断电|停机/.test(q)) return "碰运动部件之前：停机、断能、上锁挂牌、验证无法启动。这一步不能省。";
+    if (/曲线|扭矩|角度/.test(q)) return S.curveSeen ? "前半段正常，后半段扭矩上不去、角度还在走。拧不动的曲线不是这个样子。" : "曲线你还没看。先看曲线，再决定查什么。";
+    if (/套筒|头子|批头/.test(q)) return "套筒是消耗件。你查过它多久没换了吗？要检查的话，记得先停机上锁。";
+    if (/螺栓|批次|来料/.test(q)) return "新批次螺栓可以核对一下规格和来料检验。不过换螺栓一般不会让曲线变成这个样子。";
+    if (/标定|传感器|漂移/.test(q)) return "标定要 20 分钟。先想想曲线长什么样，再决定值不值得标定。";
+    if (/复位|重启|再打/.test(q)) return "连着报两次就别再拿工件试了，复位不是排查。";
+    return "这个超出这道题了。真实现场遇到，去问当班的维修师傅。";
+  }
+
+  // ---------- 判定 ----------
+  function matchOwn(t) {
+    if (!t.trim()) return null;
+    if (/套筒|头子|批头|打滑|滑了|磨/.test(t)) return "socket";
+    if (/螺栓|批次/.test(t)) return "bolt";
+    if (/传感器|标定|漂/.test(t)) return "sensor";
+    if (/程序|参数/.test(t)) return "program";
+    return "unknown";
+  }
+  function submitJudge(e) {
+    e.preventDefault();
+    const own = matchOwn($("own").value);
+    const picked = (document.querySelector('input[name="cause"]:checked') || {}).value;
+    const cause = own && own !== "unknown" ? own : picked;
+    const fix = (document.querySelector('input[name="fix"]:checked') || {}).value;
+    if (own === "unknown" && !picked) { S.judgeMsg = "没太听明白你的意思。换个说法，或者从上面的选项里选一个。"; return renderOverlays(); }
+    if (!cause || !fix) { S.judgeMsg = "根本原因和处理措施都要选。"; return renderOverlays(); }
+    if (cause !== "socket") return wrongJudge(CAUSE_FEEDBACK[cause], 300, "误判：" + ({ bolt: "螺栓不良", sensor: "传感器漂移", program: "程序被改" }[cause]));
+    if (fix !== "replace") return wrongJudge(FIX_FEEDBACK[fix], 180, "措施不对：" + ({ calib: "去标定", return: "退螺栓", reset: "复位继续" }[fix]));
+    S.steps.push({ name: "判定：套筒磨损打滑 → 更换套筒", cost: 0, kind: "key" });
+    say("master", S.socketChecked ? "对。套筒换完做首件确认，再把这次更换记下来。" : "原因说对了，但你没亲眼看套筒。下次先确认，再下结论。");
+    S.success = true; S.phase = "review"; S.judgeMsg = "";
+    render();
+  }
+  function wrongJudge(text, penalty, label) {
+    S.wrong++;
+    S.steps.push({ name: label, cost: penalty, kind: "judge" });
+    say("master", text);
+    S.judgeMsg = "";
+    S.phase = "play";
+    addTime(penalty);
+    resetJudgeForm();
+    render();
+  }
+  function resetJudgeForm() { $("judge-form").reset(); }
+
+  // ---------- 复盘 ----------
+  function renderReview() {
+    const st = scoreRun(S);
+    const failed = !!S.redline;
+    const extra = S.simSec - BEST_SEC;
+    const el = $("review");
+    const yours = S.steps.map(s => {
+      const [lab, cls] = KIND_LABEL[s.kind] || ["", ""];
+      return `<li>${esc(s.name)} <span class="t">${s.cost ? "+" + fmt(s.cost) : ""}</span> <span class="chip ${cls}">${lab}</span></li>`;
+    }).join("") || "<li>还没有动作</li>";
+    const best = BEST.map(b => `<li>${b[0]} <span class="t">+${fmt(b[1])}</span><br><span class="small">${b[2]}</span></li>`).join("");
+    const ded = [];
+    if (failed) ded.push("触碰安全红线，本关 0 星");
+    if (S.hintsUsed) ded.push(`求助老师傅 ${S.hintsUsed} 次，−${S.hintsUsed} 星`);
+    if (S.wrong) ded.push(`误判 ${S.wrong} 次，−${S.wrong} 星，并增加返工时间`);
+    if (!failed && !S.socketChecked) ded.push("没有亲眼确认套筒就下结论，最高 2 星");
+    if (!failed && S.simSec > 9 * 60) ded.push(`排查用时超过 9 分钟，${S.simSec > 18 * 60 ? "−2" : "−1"} 星`);
+    const detours = S.steps.filter(s => s.kind === "detour").reduce((t, s) => t + s.cost, 0);
+    el.innerHTML = `
+      <span class="eyebrow">复盘 · 装配线 3 号拧紧工位 · 扭矩低于下限</span>
+      <h2 id="review-title">${failed ? "本关失败：触碰安全红线" : "排障成功，产线恢复"}</h2>
+      <div class="result">
+        <div><div class="cap">星级</div><div class="stars">${starHTML(st)}</div></div>
+        <div><div class="cap">你的排查用时</div><div class="big">${fmt(S.simSec)}</div></div>
+        <div><div class="cap">老师傅参考</div><div class="big" style="color:var(--muted)">${fmt(BEST_SEC)}</div></div>
+        <div><div class="cap">${extra > 0 ? "多停了" : "比参考快"}</div><div class="big" style="color:${extra > 0 ? "var(--danger)" : "var(--ok)"}">${fmt(Math.abs(extra))}</div></div>
+      </div>
+      <p class="small" style="margin:0">更换套筒和首件确认约 5 分钟，所有人相同，不计入评分。参考用时只算动作耗时，不含思考时间。${detours ? `你在弯路上花了 ${mins(detours)}。` : ""}</p>
+      <div class="compare">
+        <div class="path"><h3>你的路径</h3><ol>${yours}</ol></div>
+        <div class="path"><h3>老师傅的路径</h3><ol>${best}</ol></div>
+      </div>
+      ${ded.length ? `<div><h3 style="font-size:14px;margin-bottom:6px">扣分项</h3><ul class="deduct">${ded.map(d => `<li>${d}</li>`).join("")}</ul></div>` : ""}
+      <div class="lessons">
+        <div class="lesson"><b>打滑的曲线长什么样</b><p>前段正常，后段扭矩上不去、角度还在走。拧不动则是扭矩快速冲高、角度停住。</p></div>
+        <div class="lesson"><b>套筒是消耗件</b><p>内六角磨圆会打滑。更换后做首件确认，并记录更换时间。</p></div>
+        <div class="lesson"><b>连续报警别拿工件试</b><p>连着报两次，复位再打只会多出不合格品，先排查原因。</p></div>
+        <div class="lesson"><b>先上锁，再动手</b><p>碰运动部件之前：停机、断能、上锁挂牌、验证无法启动。</p></div>
+      </div>
+      <div class="gov">
+        <span>出题：示例师傅</span><span>审核：示例技师 · EHS</span><span>版本 v1</span><span>绑定设备：3 号拧紧工位（示例）</span>
+        <button class="btn ghost" type="button" id="report-btn" style="margin-left:auto">我觉得这关有问题</button>
+      </div>
+      <div class="row-end">
+        <span class="small" style="margin-right:auto;align-self:center">正式版：再练时会换一种表象，例如不同的报警组合和现象描述。</span>
+        <button class="btn primary" type="button" id="retry-btn">再练一次</button>
+      </div>`;
+    $("retry-btn").addEventListener("click", restart);
+    $("report-btn").addEventListener("click", () => toast("已记录反馈。正式版会推送给出题师傅，原型中不会真的发送。"));
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  let toastTimer;
+  function toast(t) {
+    let el = document.querySelector(".toast");
+    if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.textContent = t; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
+  }
+
+  function begin() {
+    S.phase = "play";
+    say("op", "刚换了一箱螺栓，打第一颗就报了，声音听着跟平时差不多。");
+    say("master", "别急着动手。先想想：要先看什么？");
+    render();
+  }
+  function restart() { S = fresh(); resetJudgeForm(); $("own").value = ""; render(); }
+
+  // ---------- 事件 ----------
+  $("start-btn").addEventListener("click", begin);
+  $("hint-btn").addEventListener("click", hint);
+  $("judge-btn").addEventListener("click", () => { if (S.phase === "play") { S.phase = "judge"; S.judgeMsg = ""; render(); } });
+  $("judge-cancel").addEventListener("click", () => { S.phase = "play"; S.judgeMsg = ""; render(); });
+  $("judge-form").addEventListener("submit", submitJudge);
+  $("fail-retry").addEventListener("click", restart);
+  $("fail-review").addEventListener("click", () => { S.phase = "review"; render(); });
+  $("ask-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const q = $("ask-input").value.trim();
+    if (!q || S.phase !== "play") return;
+    say("me", q); say("master", reply(q));
+    $("ask-input").value = "";
+    renderChat();
+  });
+
+  // ---------- 启动 ----------
+  drawChart();
+  function start(data) {
+    if (data && data.S && typeof data.S === "object") S = Object.assign(fresh(), data.S);
+    render();
+  }
+  window.claude?.hot?.snapshot?.(() => ({ S }));
+  const hot = window.claude?.hot;
+  if (hot?.ready) hot.ready(start); else start(hot?.data ?? {});
+})();
+</script>

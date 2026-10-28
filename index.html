@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>排障道场 · 产线排障情景训练（v2）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+/* 布局：夜班工位终端。顶部工单条（计时、设备状态）；三栏：工位示意图 + 检查面板 / 怀疑板 + 检查记录 / 对话；底部操作条（上锁、修复）。 */
+:root {
+  --bg: #E5E8E3;
+  --panel: #F6F7F3;
+  --panel-2: #ECEFE9;
+  --ink: #1B2220;
+  --muted: #5B6661;
+  --line: #C6CCC5;
+  --accent: #C4521A;
+  --accent-ink: #FFF6EE;
+  --accent-soft: #F3DDCF;
+  --ok: #2B7A50;
+  --ok-soft: #D9EADF;
+  --warn: #9A700A;
+  --warn-soft: #F0E5C4;
+  --danger: #B3302A;
+  --danger-soft: #F3D8D4;
+  --steel: #8C9A95;
+  --steel-2: #B9C3BF;
+  --hmi: #0F1E1B;
+  --hmi-ink: #BFE2D1;
+  --hmi-dim: #6E9488;
+  --hmi-grid: #22403A;
+  --hmi-band: #1F4A3A;
+  --hmi-actual: #FF8A4C;
+  --hmi-sel: rgba(255, 196, 120, .22);
+  --shadow: 0 1px 0 rgba(27,34,32,.06), 0 8px 24px -12px rgba(27,34,32,.25);
+  --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --f-num: "Barlow Condensed", "DIN Alternate", "Arial Narrow", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111615; --panel: #1A201E; --panel-2: #212927; --ink: #E3E8E4; --muted: #93A099; --line: #2D3734;
+    --accent: #E9793A; --accent-ink: #1C0F07; --accent-soft: #3A2416;
+    --ok: #5CBF89; --ok-soft: #163326; --warn: #D8AD3D; --warn-soft: #342A11; --danger: #E8645B; --danger-soft: #3B1A17;
+    --steel: #6D7B76; --steel-2: #3B4744;
+    --hmi: #0A1412; --hmi-ink: #BFE2D1; --hmi-dim: #5F857A; --hmi-grid: #1C352F; --hmi-band: #17402F; --hmi-actual: #FF8A4C; --hmi-sel: rgba(255, 196, 120, .2);
+    --shadow: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111615; --panel: #1A201E; --panel-2: #212927; --ink: #E3E8E4; --muted: #93A099; --line: #2D3734;
+  --accent: #E9793A; --accent-ink: #1C0F07; --accent-soft: #3A2416;
+  --ok: #5CBF89; --ok-soft: #163326; --warn: #D8AD3D; --warn-soft: #342A11; --danger: #E8645B; --danger-soft: #3B1A17;
+  --steel: #6D7B76; --steel-2: #3B4744;
+  --hmi: #0A1412; --hmi-ink: #BFE2D1; --hmi-dim: #5F857A; --hmi-grid: #1C352F; --hmi-band: #17402F; --hmi-actual: #FF8A4C; --hmi-sel: rgba(255, 196, 120, .2);
+  --shadow: 0 1px 0 rgba(0,0,0,.3), 0 10px 28px -14px rgba(0,0,0,.7);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 28px;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.app { max-width: 1280px; margin: 0 auto; display: grid; gap: 14px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: 12px; letter-spacing: .04em; border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.chip.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.chip.danger { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.chip.accent { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+
+/* 工单条 */
+.bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 20px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; box-shadow: var(--shadow);
+}
+.brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; }
+.brand b { font-weight: 900; font-size: 20px; letter-spacing: .04em; }
+.brand .lvl { color: var(--muted); font-size: 14px; }
+.meters { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+.meter { display: grid; justify-items: end; line-height: 1.1; }
+.meter small { font-size: 11px; letter-spacing: .12em; color: var(--muted); }
+.meter strong { font-size: 15px; }
+.timer { position: relative; }
+.timer .num { font-family: var(--f-num); font-weight: 700; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--accent); }
+.timer .plus { position: absolute; right: 0; top: -8px; font-family: var(--f-num); font-weight: 700; font-size: 18px; color: var(--danger); opacity: 0; pointer-events: none; }
+.timer .plus.show { animation: rise 1.2s ease-out forwards; }
+@keyframes rise { 0% { opacity: 0; transform: translateY(6px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }
+.lock-chip.on { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.proto-note { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+
+/* 三栏 */
+.stage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; display: grid; gap: 12px; align-content: start; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card-head h2 { font-size: 15px; font-weight: 700; letter-spacing: .06em; }
+.card-head .sub { font-size: 12px; color: var(--muted); }
+
+/* 工位示意图 */
+.station { background: var(--panel-2); border-radius: 8px; padding: 6px; }
+.station svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.station .part { cursor: pointer; outline: none; }
+.station .part .body { transition: stroke .15s, stroke-width .15s; }
+.station .part:hover .body, .station .part:focus-visible .body { stroke: var(--ink); stroke-width: 2.4; }
+.station .part.sel .body { stroke: var(--accent); stroke-width: 3; }
+.station .lbl { font-size: 12px; font-weight: 700; }
+.station .lbl-sm { font-size: 10px; }
+.lamp { animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { to { opacity: .25; } }
+
+.inspect { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; min-height: 92px; }
+.inspect h3 { font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.inspect .empty { color: var(--muted); font-size: 14px; }
+.methods { display: flex; flex-wrap: wrap; gap: 8px; }
+.method {
+  display: grid; gap: 2px; text-align: left; padding: 8px 12px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line); min-width: 0;
+}
+.method:hover:not(:disabled) { border-color: var(--ink); background: var(--panel-2); }
+.method:disabled { cursor: default; opacity: .5; }
+.method .n { font-weight: 700; font-size: 14px; }
+.method .m { font-size: 12px; color: var(--muted); font-family: var(--f-mono); }
+.method .m .mv { color: var(--danger); font-family: var(--f-body); }
+
+/* 怀疑板 */
+.board { display: grid; gap: 6px; }
+.cand { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 8px 6px 10px; border-radius: 8px; background: var(--panel-2); }
+.cand .nm { font-size: 14px; font-weight: 500; }
+.cand.out .nm { text-decoration: line-through; color: var(--muted); }
+.cand.sus { background: var(--accent-soft); }
+.cand.sus .nm { color: var(--accent); font-weight: 700; }
+.tog { display: flex; gap: 4px; }
+.tog button { font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+.tog button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.add { display: flex; gap: 6px; }
+.add input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
+.facts { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; padding-right: 2px; }
+.facts h3 { font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: .08em; }
+.fact { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); }
+.fact .t { font-family: var(--f-mono); font-size: 11px; color: var(--muted); padding-top: 2px; }
+.fact b { font-weight: 700; }
+.fact.event { background: var(--danger-soft); }
+.fact.empty { display: block; background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+
+/* 对话 */
+.log { display: grid; align-content: start; gap: 10px; max-height: 320px; min-height: 160px; overflow-y: auto; padding-right: 4px; }
+.msg { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: start; }
+.avatar { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--panel-2); color: var(--ink); }
+.msg.eng .avatar { background: var(--accent-soft); color: var(--accent); }
+.msg.me .avatar { background: var(--ink); color: var(--panel); }
+.msg .who { font-size: 12px; color: var(--muted); }
+.msg .text { font-size: 14px; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 14px; font-weight: 500; transition: background .15s, border-color .15s; }
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:disabled { cursor: not-allowed; opacity: .5; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: var(--accent); }
+.btn.warn { border-color: var(--warn); color: var(--warn); }
+.eng-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+
+/* 操作条 */
+.dock { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; }
+.dock p { font-size: 13px; color: var(--muted); }
+.dock .acts { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* 浮层 */
+.overlay {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 55%, rgba(0,0,0,.45));
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+}
+.sheet { width: min(720px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 20px; box-shadow: var(--shadow); display: grid; gap: 14px; max-height: 100%; overflow-y: auto; }
+.sheet.wide { width: min(1040px, 100%); }
+.sheet h2 { font-size: 22px; font-weight: 900; }
+.eyebrow { font-size: 12px; letter-spacing: .14em; color: var(--muted); }
+.ticket { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; background: var(--panel-2); border-radius: 8px; padding: 12px 14px; }
+.ticket div { display: grid; }
+.ticket span { font-size: 12px; color: var(--muted); }
+.ticket strong { font-weight: 700; }
+.mono { font-family: var(--f-mono); }
+.quote { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; }
+.rules { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.row-end { display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap; }
+.small { font-size: 12px; color: var(--muted); }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 4px; }
+legend { font-weight: 700; font-size: 14px; padding: 0 6px; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; font-size: 14px; }
+.opt:hover { background: var(--panel-2); }
+.opt input { margin-top: 5px; accent-color: var(--accent); }
+.opt .m { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.feedback { border-radius: 8px; padding: 10px 12px; font-size: 14px; background: var(--danger-soft); }
+
+/* 读曲线 */
+.hmi { background: var(--hmi); border-radius: 8px; padding: 10px 10px 8px; color: var(--hmi-ink); }
+.hmi-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-family: var(--f-mono); font-size: 12px; color: var(--hmi-dim); }
+.hmi-top .alarm { color: var(--hmi-actual); font-weight: 600; }
+.hmi svg { display: block; width: 100%; height: auto; max-width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.hmi svg text { font-family: var(--f-mono); }
+.hmi .readout { font-family: var(--f-mono); font-size: 12px; padding-top: 4px; }
+.shapes { display: flex; flex-wrap: wrap; gap: 8px; }
+.shape { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; font-size: 14px; }
+.shape[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+
+/* 红线 */
+.redline-head { display: grid; gap: 6px; border-left: 6px solid var(--danger); padding-left: 14px; }
+.redline-head h2 { color: var(--danger); }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+
+/* 复盘 */
+.result { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: end; }
+.result .big { font-family: var(--f-num); font-weight: 700; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.result .cap { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.stars { font-size: 30px; letter-spacing: 2px; color: var(--warn); white-space: nowrap; }
+.stars .off { color: var(--line); }
+.reveal { background: var(--ink); color: var(--panel); border-radius: 10px; padding: 12px 16px; display: grid; gap: 2px; }
+.reveal .eyebrow { color: var(--steel-2); }
+.reveal strong { font-size: 20px; }
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.path { background: var(--panel-2); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; align-content: start; }
+.path h3 { font-size: 14px; }
+.path ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+.path .t { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.path .why { display: block; font-size: 13px; color: var(--muted); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; }
+.stat b { font-size: 14px; }
+.stat p { font-size: 13px; color: var(--muted); }
+.dex { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dex-item { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; }
+.dex-item.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.dex-item svg { width: 100%; height: auto; background: var(--hmi); border-radius: 6px; }
+.dex-item b { font-size: 13px; }
+.dex-item p { font-size: 12px; color: var(--muted); }
+.deduct { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 4px; }
+.gov { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); }
+
+@media (max-width: 1100px) {
+  .stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .stage .col-station { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .compare, .grid3, .dex { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .bar { grid-template-columns: minmax(0, 1fr); }
+  .meters { justify-content: flex-start; }
+  .meter { justify-items: start; }
+  .timer .plus { left: 110px; right: auto; }
+  .timer .num { font-size: 34px; }
+  .sheet { padding: 18px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lamp, .timer .plus.show { animation: none; }
+  .timer .plus.show { opacity: 1; }
+}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <b>排障道场</b>
+      <span class="lvl">夜班 02:14 · 装配线 3 号拧紧工位 · 扭矩低于下限</span>
+      <span class="chip">入门 · 根因随机</span>
+    </div>
+    <div class="meters">
+      <div class="meter"><small>设备</small><strong><span class="chip lock-chip" id="lock-chip">报警停止 · 未上锁</span></strong></div>
+      <div class="meter"><small>不合格品</small><strong id="ng">2 件</strong></div>
+      <div class="meter timer" aria-live="polite"><small>模拟停机</small><span class="num" id="timer">00:00</span><span class="plus" id="plus"></span></div>
+    </div>
+    <p class="proto-note">原型 v2 · 示例数据，不代表真实设备。现场只给事实，不告诉你对错，对错在复盘里讲。角色回复为预设规则；正式版由本地大模型扮演，检查结果由审核过的根因卡决定。</p>
+  </header>
+
+  <main class="stage">
+    <section class="card col-station" aria-labelledby="st-title">
+      <div class="card-head">
+        <h2 id="st-title">工位（点部件去查）</h2>
+        <span class="sub">⚠ 标记的是运动部件，碰之前要停机上锁</span>
+      </div>
+      <div class="station" id="station"></div>
+      <div class="inspect" id="inspect" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="bd-title">
+      <div class="card-head">
+        <h2 id="bd-title">怀疑板</h2>
+        <span class="sub">自己怀疑，自己排除</span>
+      </div>
+      <div class="board" id="board"></div>
+      <form class="add" id="add-form">
+        <label for="add-input" hidden>写下新的怀疑</label>
+        <input id="add-input" type="text" placeholder="写下新的怀疑，例如：头子打滑" autocomplete="off">
+        <button class="btn" type="submit">记下</button>
+      </form>
+      <div class="facts" id="facts" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="tk-title">
+      <div class="card-head">
+        <h2 id="tk-title">对话</h2>
+        <span class="sub">点工位图上的“操作工”去问话</span>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <div class="eng-row">
+        <span id="eng-left">叫醒值班工程师：每次 +8 分钟，复盘记录</span>
+        <button class="btn" type="button" id="eng-btn">📞 叫值班工程师</button>
+      </div>
+    </section>
+  </main>
+
+  <section class="dock">
+    <p id="dock-tip">先观察，再怀疑，再挑最能分辨的检查。修完记得验证。</p>
+    <div class="acts">
+      <button class="btn warn" type="button" id="lock-btn">停机并上锁挂牌 · 1.5 分钟</button>
+      <button class="btn primary" type="button" id="fix-btn">我要修复 →</button>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="ov-intro" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <span class="eyebrow">维修工单 · 示例</span>
+    <h2 id="intro-title">3 号拧紧工位报扭矩低于下限，产线停了</h2>
+    <div class="ticket">
+      <div><span>工单号</span><strong class="mono">WO-0314（示例）</strong></div>
+      <div><span>时间</span><strong>夜班 02:14</strong></div>
+      <div><span>工位</span><strong>装配线 · 3 号拧紧工位</strong></div>
+      <div><span>报警</span><strong class="mono">TQ-LOW ×2</strong></div>
+    </div>
+    <p class="quote">操作工：“刚换了一箱螺栓，打第一颗就报了，声音听着跟平时差不多。”</p>
+    <ol class="rules">
+      <li><strong>这一局的根本原因是随机的。</strong>同样的报警，背后可能是不同的原因。</li>
+      <li>在工位图上<strong>自己点部件、选怎么查</strong>；每项检查都耗时，大部分查了也没用。</li>
+      <li>在怀疑板上<strong>自己写下怀疑、自己排除</strong>。现场只给事实，没人告诉你对不对。</li>
+      <li><strong>安全红线：</strong>没有停机上锁就碰运动部件，直接失败。</li>
+      <li>修完要不要验证、要不要追溯，你自己决定。<strong>修错了又没验证，后面会出事。</strong></li>
+    </ol>
+    <div class="row-end"><button class="btn primary" type="button" id="start-btn">接单，开始排障</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-curve" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="curve-title">
+    <span class="eyebrow">读曲线 · 计时暂停</span>
+    <h2 id="curve-title">这条曲线哪里不对？</h2>
+    <p class="small">在曲线上按住拖动，框出你觉得异常的那一段，再判断它是哪种形态。这里不告诉你对错，判断会记到怀疑板的检查记录里。</p>
+    <div class="hmi">
+      <div class="hmi-top"><span>STATION 03 · 拧紧轴 HMI</span><span class="alarm">TQ-LOW 扭矩低于下限</span></div>
+      <svg id="curve-svg" viewBox="0 0 340 190" role="img" aria-label="扭矩-角度曲线，可拖动框选"></svg>
+      <div class="readout" id="curve-readout"></div>
+    </div>
+    <div class="shapes" id="shapes" role="group" aria-label="曲线形态">
+      <button type="button" class="shape" data-shape="slip" aria-pressed="false">打滑</button>
+      <button type="button" class="shape" data-shape="strip" aria-pressed="false">滑牙</button>
+      <button type="button" class="shape" data-shape="early" aria-pressed="false">提前停止</button>
+      <button type="button" class="shape" data-shape="stall" aria-pressed="false">拧不动</button>
+    </div>
+    <p class="small" id="sel-text">还没有框选。</p>
+    <div class="row-end">
+      <button class="btn" type="button" id="curve-close">只看看，不下判断</button>
+      <button class="btn primary" type="button" id="curve-save">记下判断</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-fix" hidden>
+  <form class="sheet" id="fix-form" role="dialog" aria-modal="true" aria-labelledby="fix-title">
+    <span class="eyebrow">修复 · 计时暂停</span>
+    <h2 id="fix-title">你打算怎么修？</h2>
+    <fieldset>
+      <legend>处理措施（选一项）</legend>
+      <div id="fix-opts"></div>
+    </fieldset>
+    <fieldset>
+      <legend>恢复生产前（自己决定做不做）</legend>
+      <label class="opt"><input type="checkbox" id="v-first"> 首件确认：试打一颗并检验 <span class="m">· 3 分钟</span></label>
+      <label class="opt"><input type="checkbox" id="v-trace"> 追溯：检查异常发生后已经生产的产品 <span class="m">· 10 分钟</span></label>
+      <label class="opt"><input type="checkbox" id="v-record"> 在记录本上记下这次处理 <span class="m">· 0.5 分钟</span></label>
+    </fieldset>
+    <p class="small">涉及运动部件的措施，要在停机上锁的状态下才能做；修完会自动解锁恢复运行。</p>
+    <div class="feedback" id="fix-msg" hidden></div>
+    <div class="row-end">
+      <button class="btn" type="button" id="fix-cancel">再查查</button>
+      <button class="btn primary" type="submit">开始修复</button>
+    </div>
+  </form>
+</div>
+
+<div class="overlay" id="ov-fail" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="fail-title">
+    <div class="redline-head">
+      <span class="eyebrow">安全红线 · 本局失败</span>
+      <h2 id="fail-title">没有停机上锁，就接触了运动部件</h2>
+      <p id="fail-reason"></p>
+    </div>
+    <p>在真实现场，拧紧轴可能被误启动。碰任何运动部件之前，必须先完成以下步骤：</p>
+    <ol class="steps">
+      <li><strong>停机：</strong>按规程停止设备。</li>
+      <li><strong>断能：</strong>切断电源、气源等能量。</li>
+      <li><strong>上锁挂牌：</strong>在能量隔离点上锁，挂“禁止操作”牌。</li>
+      <li><strong>验证：</strong>确认设备无法启动、没有残余能量。</li>
+      <li><strong>作业：</strong>完成后按规程解锁、恢复。</li>
+    </ol>
+    <p class="small">示例规程，以工厂安全规程为准。安全内容为固定文本，不由 AI 生成。</p>
+    <div class="row-end">
+      <button class="btn" type="button" id="fail-review">查看复盘</button>
+      <button class="btn primary" type="button" id="fail-retry">再来一局</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-review" hidden>
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="review-title" id="review"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ================= 关卡内容（正式版来自审核过的根因卡和检查矩阵） =================
+  const ROOTS = ["socket", "bolt", "program"];
+  const CANDS = [
+    { id: "socket", name: "套筒磨损" },
+    { id: "bolt", name: "螺栓批次异常" },
+    { id: "program", name: "程序选错" },
+    { id: "sensor", name: "扭矩传感器漂移" },
+    { id: "spindle", name: "拧紧轴故障" }
+  ];
+  const CAND_NAME = Object.fromEntries(CANDS.map(c => [c.id, c.name]));
+  const KEYWORDS = [
+    ["socket", /套筒|头子|批头|打滑|啃/],
+    ["bolt", /螺栓|螺纹|批次|滑牙|来料/],
+    ["program", /程序|型号|参数|设置|切换/],
+    ["sensor", /传感器|标定|漂/],
+    ["spindle", /拧紧轴|电机|驱动|主轴|伺服/]
+  ];
+  const SHAPES = { slip: "打滑", strip: "滑牙", early: "提前停止", stall: "拧不动" };
+  const TRUTH_SHAPE = { socket: "slip", bolt: "strip", program: "early" };
+  const ANOMALY = { socket: [213, 360], bolt: [195, 265], program: [195, 225] };
+  const CURVE_READOUT = {
+    socket: "峰值 17.6 N·m · 下限 23.0 · 角度到 360° 仍未达标",
+    bolt: "峰值 22.6 N·m · 随后骤降 · 终止角度 262°",
+    program: "峰值 18.0 N·m · 正常结束 · 终止角度 219°"
+  };
+
+  const PARTS = {
+    hmi: { name: "HMI 屏", checks: ["curve", "prog", "alarms"] },
+    ctrl: { name: "控制器", checks: ["ctrl"] },
+    spindle: { name: "拧紧轴", checks: ["listen"] },
+    sensor: { name: "扭矩传感器", checks: ["calib"] },
+    socket: { name: "套筒", moving: true, checks: ["socketLook"] },
+    part: { name: "已拧工件", checks: ["partLook"] },
+    bin: { name: "螺栓料箱", checks: ["binLook", "binSwap"] },
+    rec: { name: "记录本", checks: ["records"] },
+    op: { name: "操作工", checks: ["q1", "q2", "q3", "q4"] }
+  };
+
+  // 结果和排除关系：按根因取值；others 表示其余根因，all 表示所有根因
+  const CHECKS = {
+    curve: { label: "看扭矩曲线", cost: 60, special: "curve",
+      res: { all: "HMI 上的本次曲线（形态要自己判断）" },
+      excl: { socket: ["bolt", "program", "sensor"], bolt: ["socket", "program", "sensor"], program: ["socket", "bolt", "spindle"] } },
+    prog: { label: "查程序号", cost: 60,
+      res: { program: "当前程序 P07（产品 A）。作业指导书要求 P12（产品 B）。", others: "当前程序 P12（产品 B），和作业指导书一致。" },
+      excl: { program: ["socket", "bolt", "sensor", "spindle"], others: ["program"] }, confirm: { program: true } },
+    alarms: { label: "看报警记录", cost: 30, res: { all: "近 1 小时：02:12、02:14 两次 TQ-LOW，之前没有报警。" }, excl: {} },
+    ctrl: { label: "看驱动器状态", cost: 60, res: { all: "驱动器状态正常，没有伺服报警。" }, excl: { all: ["spindle"] } },
+    listen: { label: "空转听声音", cost: 60, needsRun: true, res: { all: "空转平稳，没有异响。" }, excl: { all: ["spindle"] } },
+    calib: { label: "重新标定传感器", cost: 1200, res: { all: "标定完成，偏差 0.4%，在允许范围内。" }, excl: { all: ["sensor"] } },
+    socketLook: { label: "上手检查套筒", cost: 180, moving: true,
+      res: { socket: "内六角磨损明显，棱角发圆。", others: "内六角完好，看起来上周刚换过。" },
+      excl: { socket: ["bolt", "program", "sensor", "spindle"], others: ["socket"] }, confirm: { socket: true } },
+    partLook: { label: "看已拧的螺栓", cost: 60,
+      res: { socket: "螺栓头的棱角有被啃过的痕迹。", bolt: "有一颗螺栓的螺纹被拉伤了。", program: "螺栓外观正常，看起来拧到位了。" },
+      excl: { socket: ["program", "sensor"], bolt: ["socket", "program", "sensor"], program: ["socket", "bolt"] } },
+    binLook: { label: "看料箱里的螺栓", cost: 120,
+      res: { bolt: "新批次表面颜色偏暗，抽一颗看，螺纹有毛刺。", others: "规格和标签一致，外观正常。" },
+      excl: { bolt: ["socket", "program"], others: ["bolt"] }, lead: { bolt: true } },
+    binSwap: { label: "换旧批次螺栓试打一颗", cost: 240, needsRun: true,
+      res: { bolt: "换旧批次后试打：合格。", others: "换旧批次后试打：还是报 TQ-LOW，又多一件不合格。" },
+      excl: { bolt: ["socket", "program", "sensor", "spindle"], others: ["bolt"] }, confirm: { bolt: true }, ng: { bolt: 0, others: 1 } },
+    records: { label: "翻维修和交接班记录", cost: 120,
+      res: { socket: "维修记录：套筒上次更换约 5 个月前（同类工位一般 3 个月一换）。交接班记录没有特别事项。",
+             bolt: "维修记录：套筒上周刚换。仓库记录：这批螺栓是今晚新开的箱。",
+             program: "维修记录：套筒上周刚换。交接班记录：01:50 切换生产型号。" },
+      excl: { bolt: ["socket"], program: ["socket"] }, lead: { socket: true, program: true } },
+    q1: { label: "问：刚才发生了什么？", cost: 30, ask: true, res: { all: "刚换了一箱螺栓，打第一颗就报了，声音听着跟平时差不多。" }, excl: {} },
+    q2: { label: "问：套筒多久没换了？", cost: 30, ask: true,
+      res: { socket: "好像很久没换了，我没见人换过。", others: "上周维修刚换过。" }, excl: { socket: [], others: ["socket"] }, lead: { socket: true } },
+    q3: { label: "问：最近有没有切过型号、改过设置？", cost: 30, ask: true,
+      res: { program: "哦对，01:50 切了型号，按屏幕提示点的……应该没关系吧？", others: "没有，一直在打这个型号。" }, excl: { program: [], others: ["program"] }, lead: { program: true } },
+    q4: { label: "问：这批螺栓跟以前有什么不一样？", cost: 30, ask: true,
+      res: { bolt: "颜色好像暗一点，摸着有点糙。", others: "看着一样，就是换了个箱子。" }, excl: {}, lead: { bolt: true } }
+  };
+  const pick = (map, root) => map ? (root in map ? map[root] : ("others" in map ? map.others : map.all)) : undefined;
+
+  const FIXES = [
+    { id: "socket", label: "更换套筒", cost: 240, moving: true },
+    { id: "bolt", label: "隔离这批螺栓，换回合格批次，通知质量部门", cost: 240 },
+    { id: "program", label: "在 HMI 上切回正确的程序", cost: 60 },
+    { id: "sensor", label: "重新标定扭矩传感器", cost: 1200 },
+    { id: "spindle", label: "更换拧紧轴", cost: 3600, moving: true }
+  ];
+
+  const ENG_HINTS = {
+    socket: ["曲线打滑的话，是不是工具和螺栓之间没咬住？看看接触的那一头。", "上锁，看套筒。"],
+    bolt: ["扭矩冲上去又突然掉下来，像不像什么东西被拉坏了？", "拿旧批次的螺栓试打一颗。"],
+    program: ["曲线很干净，就是停早了。是谁告诉它在那里停的？", "看一下 HMI 上的程序号，和作业指导书对一下。"]
+  };
+
+  const BEST = {
+    socket: { steps: [
+      ["看扭矩曲线", 60, "先分清是打滑、滑牙还是提前停止，三种情况查的方向完全不同。"],
+      ["曲线打滑 → 问操作工套筒多久没换了", 30, "打滑多半是工具和螺栓之间没咬住，先问消耗件。"],
+      ["停机并上锁挂牌", 90, "要碰套筒了，先隔离能量。"],
+      ["上手检查套筒", 180, "亲眼确认磨损，再下结论。"],
+      ["更换套筒", 240, "措施对准根因。"],
+      ["首件确认", 180, "修完必须验证，修错了这一步就能发现。"]
+    ] },
+    bolt: { steps: [
+      ["看扭矩曲线", 60, "扭矩冲上去又骤降，是滑牙的样子，问题多半在螺栓本身。"],
+      ["看已拧的螺栓", 60, "滑牙会在螺纹上留下拉伤，一分钟就能确认方向。"],
+      ["换旧批次螺栓试打一颗", 240, "换一个变量试一次，合格就坐实了。"],
+      ["隔离这批螺栓，换回合格批次，通知质量部门", 240, "问题批次不能再上线，还要让质量部门追供应商。"],
+      ["首件确认", 180, "修完必须验证。"]
+    ] },
+    program: { steps: [
+      ["看扭矩曲线", 60, "不打滑也不滑牙，平平地停早了，说明工具和螺栓多半没事，是“该停的地方”变了。"],
+      ["问操作工最近有没有切型号", 30, "停的位置变了，先问问最近有没有人动过设置。"],
+      ["查程序号", 60, "程序决定在哪里停，对一下程序号就能坐实。"],
+      ["在 HMI 上切回正确的程序", 60, "措施对准根因。"],
+      ["首件确认", 180, "修完必须验证。"],
+      ["追溯切型号之后的产品", 600, "前面打的都是按错的程序打的，一件都不能放走。"]
+    ] }
+  };
+  for (const k in BEST) BEST[k].total = BEST[k].steps.reduce((s, x) => s + x[1], 0);
+
+  // ================= 评分（纯函数） =================
+  function scoreV2(r) {
+    if (r.redline) return 0;
+    let s = 3;
+    if (r.total > r.best * 1.5 + 120) s -= 1;
+    if (r.checks > 0 && r.valuable / r.checks < 0.5) s -= 1;
+    s -= r.wrongFix + r.engineer;
+    if (!r.firstPiece) s -= 1;
+    if (r.escaped) s -= 1;
+    return Math.max(1, s);
+  }
+  window.__scoreV2 = scoreV2;
+
+  // ================= 状态 =================
+  const fresh = (root) => ({
+    root, phase: "intro", simSec: 0, locked: false, ng: 2,
+    sel: null, used: [], checks: [], facts: [], chat: [],
+    board: Object.fromEntries(CANDS.map(c => [c.id, "none"])), custom: [], misExcluded: false,
+    curveSeen: false, curveJudge: null, logicalOut: [], confirmed: false,
+    engineer: 0, wrongFix: 0, fixes: [], events: [], firstPiece: false, traced: false, escaped: false,
+    redline: null, success: false, fixMsg: "", lastRoot: null
+  });
+  const randomRoot = (not) => { const pool = ROOTS.filter(r => r !== not); return pool[Math.floor(Math.random() * pool.length)]; };
+  const hashRoot = (location.hash || "").replace("#", "");
+  let S = fresh(ROOTS.includes(hashRoot) ? hashRoot : randomRoot(null));
+
+  const $ = id => document.getElementById(id);
+  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fmt = s => { s = Math.max(0, Math.round(s)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
+  const mins = s => { const m = s / 60; return (Number.isInteger(m) ? m : m.toFixed(1)) + " 分钟"; };
+  const clock = s => { const base = 2 * 3600 + 14 * 60 + s; const h = Math.floor(base / 3600) % 24, m = Math.floor(base / 60) % 60; return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"); };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ================= 曲线 =================
+  const ref = a => a < 40 ? 0 : Math.min(25, 25 * Math.pow((a - 40) / 220, 1.6));
+  const CURVES = {
+    socket: { end: 360, f: a => a < 213 ? ref(a) : 14.6 + 3 * (((a - 213) % 18) / 18) },
+    bolt: { end: 262, f: a => {
+      const up = a < 40 ? 0 : 25 * Math.pow((a - 40) / 170, 1.6);
+      if (a < 198) return up;
+      if (a < 212) return 22.6 - (a - 198) * (16 / 14);
+      return 5.6 + 1.2 * Math.abs(Math.sin(a / 4));
+    } },
+    program: { end: 219, f: a => Math.min(18, ref(a)) }
+  };
+  const CV = { W: 340, H: 190, L: 34, R: 12, T: 14, B: 26 };
+  const cx = a => CV.L + (a / 360) * (CV.W - CV.L - CV.R);
+  const cy = t => CV.T + (1 - t / 30) * (CV.H - CV.T - CV.B);
+  function curvePath(root, X = cx, Y = cy, step = 3) {
+    const c = CURVES[root]; const p = [];
+    for (let a = 0; a <= c.end; a += step) p.push((a ? "L" : "M") + X(a).toFixed(1) + " " + Y(c.f(a)).toFixed(1));
+    p.push("L" + X(c.end).toFixed(1) + " " + Y(c.f(c.end)).toFixed(1));
+    return p.join(" ");
+  }
+  function drawCurve() {
+    const { W, H, L, R, T, B } = CV;
+    const grid = 'style="stroke:var(--hmi-grid);stroke-width:1"', dim = 'style="fill:var(--hmi-dim)"';
+    let g = "";
+    for (const t of [0, 10, 20, 30]) g += `<line x1="${L}" x2="${W - R}" y1="${cy(t)}" y2="${cy(t)}" ${grid}/><text x="${L - 6}" y="${cy(t) + 4}" text-anchor="end" font-size="10" ${dim}>${t}</text>`;
+    for (const a of [0, 90, 180, 270, 360]) g += `<line x1="${cx(a)}" x2="${cx(a)}" y1="${T}" y2="${H - B}" ${grid}/><text x="${cx(a)}" y="${H - B + 14}" text-anchor="middle" font-size="10" ${dim}>${a}°</text>`;
+    const band = `<rect x="${L}" y="${cy(27)}" width="${W - L - R}" height="${cy(23) - cy(27)}" style="fill:var(--hmi-band)"/>
+      <text x="${W - R - 2}" y="${cy(27) - 3}" text-anchor="end" font-size="9" ${dim}>上限 27</text>
+      <text x="${W - R - 2}" y="${cy(23) + 10}" text-anchor="end" font-size="9" ${dim}>下限 23</text>`;
+    const refD = []; for (let a = 0; a <= 260; a += 3) refD.push((a ? "L" : "M") + cx(a).toFixed(1) + " " + cy(ref(a)).toFixed(1));
+    const refP = `<path d="${refD.join(" ")}" style="fill:none;stroke:var(--hmi-dim);stroke-width:1.4;stroke-dasharray:4 3"/>`;
+    const c = CURVES[S.root];
+    const act = `<path d="${curvePath(S.root)}" style="fill:none;stroke:var(--hmi-actual);stroke-width:2.2;stroke-linejoin:round"/>
+      <circle cx="${cx(c.end)}" cy="${cy(c.f(c.end))}" r="3" style="fill:var(--hmi-actual)"/>`;
+    const legend = `<g font-size="10"><line x1="${L + 8}" x2="${L + 26}" y1="${T + 8}" y2="${T + 8}" style="stroke:var(--hmi-actual);stroke-width:2.2"/><text x="${L + 30}" y="${T + 11}" style="fill:var(--hmi-ink)">本次</text><line x1="${L + 66}" x2="${L + 84}" y1="${T + 8}" y2="${T + 8}" style="stroke:var(--hmi-dim);stroke-width:1.4;stroke-dasharray:4 3"/><text x="${L + 88}" y="${T + 11}" style="fill:var(--hmi-ink)">正常参考</text><text x="${L + 150}" y="${T + 11}" font-size="9" ${dim}>纵轴 N·m · 横轴 角度</text></g>`;
+    const j = S.curveDraft || {};
+    const selRect = (j.a0 != null && j.a1 != null) ? `<rect x="${cx(Math.min(j.a0, j.a1))}" y="${T}" width="${Math.abs(cx(j.a1) - cx(j.a0))}" height="${H - T - B}" style="fill:var(--hmi-sel);stroke:var(--hmi-actual);stroke-width:1;stroke-dasharray:3 2"/>` : "";
+    $("curve-svg").innerHTML = g + band + refP + selRect + act + legend + `<rect id="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" style="fill:transparent"/>`;
+    $("curve-readout").textContent = CURVE_READOUT[S.root];
+    for (const b of document.querySelectorAll(".shape")) b.setAttribute("aria-pressed", String(j.shape === b.dataset.shape));
+    $("sel-text").textContent = (j.a0 != null && j.a1 != null) ? `已框选：${Math.round(Math.min(j.a0, j.a1))}° – ${Math.round(Math.max(j.a0, j.a1))}°` : "还没有框选。";
+  }
+  function miniCurve(root) {
+    const W = 120, H = 60, X = a => 4 + (a / 360) * (W - 8), Y = t => 4 + (1 - t / 30) * (H - 8);
+    return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><rect x="4" y="${Y(27)}" width="${W - 8}" height="${Y(23) - Y(27)}" style="fill:var(--hmi-band)"/><path d="${curvePath(root, X, Y, 4)}" style="fill:none;stroke:var(--hmi-actual);stroke-width:1.8"/></svg>`;
+  }
+
+  // ================= 工位示意图 =================
+  function stationSVG() {
+    const part = (id, inner, label) => `<g class="part${S.sel === id ? " sel" : ""}" data-part="${id}" tabindex="0" role="button" aria-label="${label}">${inner}</g>`;
+    const body = 'class="body" style="fill:var(--panel);stroke:var(--steel);stroke-width:1.6"';
+    const txt = (x, y, t, cls = "lbl") => `<text x="${x}" y="${y}" text-anchor="middle" class="${cls}" style="fill:var(--ink)">${t}</text>`;
+    const mv = (x, y) => `<text x="${x}" y="${y}" text-anchor="middle" class="lbl-sm" style="fill:var(--danger)">⚠ 运动部件</text>`;
+    return `<svg viewBox="0 0 400 300" role="group" aria-label="3 号拧紧工位示意图">
+      <rect x="0" y="0" width="400" height="300" style="fill:var(--panel-2)"/>
+      <line x1="0" y1="262" x2="400" y2="262" style="stroke:var(--steel-2);stroke-width:2"/>
+      <rect x="236" y="8" width="8" height="70" style="fill:var(--steel-2)"/>
+      <rect x="196" y="8" width="96" height="8" rx="2" style="fill:var(--steel-2)"/>
+      <circle cx="285" cy="26" r="6" class="${S.success ? "" : "lamp"}" style="fill:${S.success ? "var(--ok)" : "var(--danger)"}"/>
+      ${part("ctrl", `<rect x="16" y="30" width="78" height="150" rx="4" ${body}/><rect x="28" y="48" width="54" height="8" style="fill:var(--steel-2)"/><circle cx="36" cy="72" r="4" style="fill:var(--ok)"/><circle cx="50" cy="72" r="4" style="fill:var(--steel-2)"/>${txt(55, 120, "控制器")}`, "控制器")}
+      ${part("hmi", `<rect x="108" y="22" width="96" height="66" rx="4" class="body" style="fill:var(--hmi);stroke:var(--steel);stroke-width:1.6"/><path d="M116 76 L134 70 L150 56 L166 46 L172 50 L178 46 L184 50 L192 46" style="fill:none;stroke:var(--hmi-actual);stroke-width:1.6"/><text x="156" y="38" text-anchor="middle" class="lbl" style="fill:var(--hmi-ink)">HMI 屏</text>`, "HMI 屏")}
+      ${part("spindle", `<rect x="220" y="78" width="40" height="78" rx="6" ${body}/>${txt(240, 122, "拧紧轴", "lbl-sm")}`, "拧紧轴")}
+      ${part("sensor", `<rect x="214" y="156" width="52" height="16" rx="3" ${body}/>${txt(318, 168, "扭矩传感器", "lbl-sm")}<line x1="266" y1="164" x2="288" y2="164" style="stroke:var(--steel);stroke-dasharray:2 2"/>`, "扭矩传感器")}
+      ${part("socket", `<rect x="229" y="172" width="22" height="30" rx="2" ${body}/>${txt(196, 192, "套筒")}${mv(196, 206)}`, "套筒，运动部件")}
+      ${part("part", `<rect x="196" y="214" width="96" height="34" rx="3" ${body}/><circle cx="240" cy="214" r="5" style="fill:var(--steel)"/>${txt(244, 238, "已拧工件", "lbl-sm")}`, "已拧工件")}
+      ${part("bin", `<path d="M306 214 L388 214 L380 258 L314 258 Z" ${body}/><g style="fill:var(--steel)"><circle cx="328" cy="210" r="3"/><circle cx="340" cy="208" r="3"/><circle cx="352" cy="210" r="3"/><circle cx="364" cy="208" r="3"/></g>${txt(347, 242, "螺栓料箱", "lbl-sm")}`, "螺栓料箱")}
+      ${part("op", `<circle cx="140" cy="168" r="14" ${body}/><path d="M118 258 L118 206 Q140 186 162 206 L162 258 Z" ${body}/>${txt(140, 232, "操作工", "lbl-sm")}`, "操作工")}
+      ${part("rec", `<rect x="24" y="200" width="66" height="54" rx="3" ${body}/><rect x="44" y="196" width="26" height="8" rx="2" style="fill:var(--steel)"/><line x1="34" y1="218" x2="80" y2="218" style="stroke:var(--steel-2)"/><line x1="34" y1="228" x2="80" y2="228" style="stroke:var(--steel-2)"/>${txt(57, 246, "记录本", "lbl-sm")}`, "记录本")}
+    </svg>`;
+  }
+  function renderStation() {
+    $("station").innerHTML = stationSVG();
+    for (const g of $("station").querySelectorAll(".part")) {
+      const go = () => { if (S.phase !== "play") return; S.sel = g.dataset.part; renderStation(); renderInspect(); };
+      g.addEventListener("click", go);
+      g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    }
+  }
+  function renderInspect() {
+    const box = $("inspect"); box.innerHTML = "";
+    if (!S.sel) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "点工位图上的部件，选择怎么查。每项检查都会增加停机时间。"; box.appendChild(p); return; }
+    const P = PARTS[S.sel];
+    const h = document.createElement("h3"); h.textContent = P.name;
+    if (P.moving) { const c = document.createElement("span"); c.className = "chip danger"; c.textContent = "运动部件 · 先停机上锁"; h.appendChild(c); }
+    const wrap = document.createElement("div"); wrap.className = "methods";
+    for (const id of P.checks) {
+      const C = CHECKS[id];
+      const used = S.used.includes(id);
+      const b = document.createElement("button"); b.type = "button"; b.className = "method";
+      const again = id === "curve" && S.curveSeen;
+      b.disabled = S.phase !== "play" || (used && !again);
+      const n = document.createElement("span"); n.className = "n"; n.textContent = (C.ask ? C.label.replace("问：", "") : C.label) + (used ? " ✓" : "");
+      const m = document.createElement("span"); m.className = "m";
+      m.textContent = again ? "再看一眼 · 不耗时" : "⏱ " + mins(C.cost);
+      if (C.moving && !again) { const w = document.createElement("span"); w.className = "mv"; w.textContent = " · ⚠ 要先上锁"; m.appendChild(w); }
+      if (C.needsRun) { const w = document.createElement("span"); w.textContent = " · 需设备运行"; m.appendChild(w); }
+      b.append(n, m);
+      b.addEventListener("click", () => doCheck(id));
+      wrap.appendChild(b);
+    }
+    box.append(h, wrap);
+  }
+
+  // ================= 怀疑板 =================
+  function renderBoard() {
+    const box = $("board"); box.innerHTML = "";
+    const rows = CANDS.map(c => ({ id: c.id, name: c.name, st: S.board[c.id] })).concat(S.custom.map((c, i) => ({ id: "custom-" + i, name: "其他：" + c.text, st: c.st })));
+    for (const r of rows) {
+      const d = document.createElement("div"); d.className = "cand" + (r.st === "sus" ? " sus" : r.st === "out" ? " out" : "");
+      const n = document.createElement("span"); n.className = "nm"; n.textContent = r.name;
+      const t = document.createElement("span"); t.className = "tog";
+      for (const [st, lab] of [["sus", "怀疑"], ["out", "排除"]]) {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = lab;
+        b.setAttribute("aria-pressed", String(r.st === st)); b.setAttribute("aria-label", lab + "：" + r.name);
+        b.disabled = S.phase !== "play";
+        b.addEventListener("click", () => setBoard(r.id, r.st === st ? "none" : st));
+        t.appendChild(b);
+      }
+      d.append(n, t); box.appendChild(d);
+    }
+  }
+  function setBoard(id, st) {
+    if (id.startsWith("custom-")) S.custom[+id.slice(7)].st = st;
+    else { S.board[id] = st; if (id === S.root && st === "out") S.misExcluded = true; }
+    renderBoard();
+  }
+  function renderFacts() {
+    const box = $("facts"); box.innerHTML = "";
+    const h = document.createElement("h3"); h.textContent = "检查记录（只记事实）"; box.appendChild(h);
+    if (!S.facts.length) { const e = document.createElement("div"); e.className = "fact empty"; e.textContent = "还没有检查。"; box.appendChild(e); return; }
+    for (const f of S.facts) {
+      const d = document.createElement("div"); d.className = "fact" + (f.event ? " event" : "");
+      const t = document.createElement("span"); t.className = "t"; t.textContent = f.time;
+      const x = document.createElement("span"); const b = document.createElement("b"); b.textContent = f.title + "："; x.append(b, document.createTextNode(f.text));
+      d.append(t, x); box.appendChild(d);
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ================= 对话 =================
+  const WHO = { op: ["操", "操作工"], eng: ["工", "值班工程师"], me: ["我", "我"] };
+  function renderChat() {
+    const log = $("log"); log.innerHTML = "";
+    for (const [who, text] of S.chat) {
+      const m = document.createElement("div"); m.className = "msg " + who;
+      const av = document.createElement("div"); av.className = "avatar"; av.textContent = WHO[who][0];
+      const b = document.createElement("div");
+      const w = document.createElement("div"); w.className = "who"; w.textContent = WHO[who][1];
+      const t = document.createElement("div"); t.className = "text"; t.textContent = text;
+      b.append(w, t); m.append(av, b); log.appendChild(m);
+    }
+    log.scrollTop = log.scrollHeight;
+    $("eng-btn").disabled = S.phase !== "play" || S.engineer >= 3;
+    $("eng-left").textContent = S.engineer >= 3 ? "值班工程师已经叫了 3 次" : `叫醒值班工程师：每次 +8 分钟，复盘记录（已叫 ${S.engineer} 次）`;
+  }
+
+  // ================= 头部、操作条、浮层 =================
+  function renderTop() {
+    renderTimer();
+    const lc = $("lock-chip");
+    lc.textContent = S.success ? "已恢复生产" : S.locked ? "已停机 · 已上锁挂牌" : "报警停止 · 未上锁";
+    lc.className = "chip lock-chip" + (S.locked ? " on" : S.success ? " ok" : "");
+    $("ng").textContent = S.ng + " 件";
+    const lb = $("lock-btn");
+    lb.textContent = S.locked ? "解锁恢复运行 · 1 分钟" : "停机并上锁挂牌 · 1.5 分钟";
+    lb.disabled = $("fix-btn").disabled = S.phase !== "play";
+  }
+  function renderTimer() { if (!animating) $("timer").textContent = fmt(S.simSec); }
+  function renderOverlays() {
+    $("ov-intro").hidden = S.phase !== "intro";
+    $("ov-curve").hidden = S.phase !== "curve";
+    $("ov-fix").hidden = S.phase !== "fix";
+    $("ov-fail").hidden = S.phase !== "fail";
+    $("ov-review").hidden = S.phase !== "review";
+    if (S.phase === "curve") drawCurve();
+    if (S.phase === "fix") { const m = $("fix-msg"); m.hidden = !S.fixMsg; m.textContent = S.fixMsg; }
+    if (S.phase === "fail") $("fail-reason").textContent = S.redline;
+    if (S.phase === "review") renderReview();
+  }
+  function render() { renderTop(); renderStation(); renderInspect(); renderBoard(); renderFacts(); renderChat(); renderOverlays(); }
+
+  // ================= 计时 =================
+  let anim = 0, animating = false;
+  function addTime(sec) {
+    if (sec <= 0) return;
+    const from = S.simSec; S.simSec += sec;
+    const p = $("plus"); p.textContent = "+" + fmt(sec); p.classList.remove("show"); void p.offsetWidth; p.classList.add("show");
+    if (reduceMotion) { $("timer").textContent = fmt(S.simSec); return; }
+    cancelAnimationFrame(anim); animating = true;
+    const t0 = performance.now(), dur = 700;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      $("timer").textContent = fmt(from + (S.simSec - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) anim = requestAnimationFrame(step); else { animating = false; $("timer").textContent = fmt(S.simSec); }
+    };
+    anim = requestAnimationFrame(step);
+  }
+  setInterval(() => { if (S.phase === "play") { S.simSec += 1; renderTimer(); } }, 1000);
+
+  // ================= 动作 =================
+  function fact(title, text, event) { S.facts.push({ time: clock(S.simSec), title, text, event: !!event }); }
+  function say(who, text) { S.chat.push([who, text]); }
+  let toastTimer;
+  function toast(t) {
+    let el = document.querySelector(".toast");
+    if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.textContent = t; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
+  }
+
+  function doCheck(id) {
+    if (S.phase !== "play") return;
+    const C = CHECKS[id];
+    if (id === "curve" && S.curveSeen) { S.curveDraft = Object.assign({}, S.curveJudge || {}); S.phase = "curve"; return render(); }
+    if (S.used.includes(id)) return;
+    if (C.moving && !S.locked) return redline("你在设备没有停机上锁的情况下，去" + C.label + "。");
+    if (C.needsRun && S.locked) return toast("设备已上锁。" + C.label + "需要设备运行，先解锁。");
+    const excl = pick(C.excl, S.root) || [];
+    const confirm = !!(C.confirm && C.confirm[S.root]);
+    const lead = !!(C.lead && C.lead[S.root]) && !S.confirmed;
+    const newEx = excl.filter(x => !S.logicalOut.includes(x));
+    const valuable = newEx.length > 0 || (confirm && !S.confirmed) || lead;
+    S.logicalOut.push(...newEx);
+    if (confirm) S.confirmed = true;
+    const result = pick(C.res, S.root);
+    S.used.push(id);
+    S.checks.push({ id, label: C.label, cost: C.cost, result, valuable, newEx, confirm, lead });
+    const ng = C.ng ? pick(C.ng, S.root) : 0;
+    if (ng) S.ng += ng;
+    addTime(C.cost);
+    if (C.ask) { say("me", C.label.replace("问：", "")); say("op", result); }
+    else if (id === "curve") { S.curveSeen = true; S.curveDraft = {}; fact("看扭矩曲线", "曲线已打开，形态待你判断"); S.phase = "curve"; }
+    else fact(C.label, result);
+    render();
+  }
+  function redline(reason) {
+    S.redline = reason;
+    S.checks.push({ id: "redline", label: "红线：未上锁接触运动部件", cost: 0, result: "", valuable: false, newEx: [], redline: true });
+    S.phase = "fail";
+    render();
+  }
+  function toggleLock() {
+    if (S.phase !== "play") return;
+    if (S.locked) { S.locked = false; addTime(60); fact("解锁恢复运行", "已解锁，设备可以运行"); }
+    else { S.locked = true; addTime(90); fact("停机并上锁挂牌", "能量已隔离，已上锁挂牌"); }
+    render();
+  }
+  function callEngineer() {
+    if (S.phase !== "play" || S.engineer >= 3) return;
+    S.engineer++;
+    addTime(480);
+    say("me", "（02 点多，打电话叫醒值班工程师）");
+    let line;
+    if (S.engineer === 1) line = S.curveSeen ? "你现在怀疑哪几个？哪一项检查能一下子把它们分开？" : "先看曲线。打滑、滑牙、提前停止，查的方向完全不同。";
+    else line = ENG_HINTS[S.root][S.engineer - 2];
+    say("eng", line);
+    render();
+  }
+
+  // ================= 读曲线交互 =================
+  function svgAngle(evt) {
+    const svg = $("curve-svg"), r = svg.getBoundingClientRect();
+    const x = (evt.clientX - r.left) / r.width * CV.W;
+    return Math.max(0, Math.min(360, (x - CV.L) / (CV.W - CV.L - CV.R) * 360));
+  }
+  let dragging = false;
+  $("curve-svg").addEventListener("pointerdown", e => { dragging = true; S.curveDraft = Object.assign(S.curveDraft || {}, { a0: svgAngle(e), a1: svgAngle(e) }); $("curve-svg").setPointerCapture(e.pointerId); drawCurve(); });
+  $("curve-svg").addEventListener("pointermove", e => { if (!dragging) return; S.curveDraft.a1 = svgAngle(e); drawCurve(); });
+  $("curve-svg").addEventListener("pointerup", () => { dragging = false; if (S.curveDraft && Math.abs(S.curveDraft.a1 - S.curveDraft.a0) < 4) { S.curveDraft.a0 = S.curveDraft.a1 = null; drawCurve(); } });
+  for (const b of document.querySelectorAll(".shape")) b.addEventListener("click", () => { S.curveDraft = Object.assign(S.curveDraft || {}, { shape: b.dataset.shape }); drawCurve(); });
+  $("curve-save").addEventListener("click", () => {
+    const d = S.curveDraft || {};
+    if (!d.shape) return toast("先选一个形态，再记下判断。框选可以不做。");
+    S.curveJudge = { shape: d.shape, a0: d.a0 != null ? Math.min(d.a0, d.a1) : null, a1: d.a1 != null ? Math.max(d.a0, d.a1) : null };
+    const range = S.curveJudge.a0 != null ? `（异常段 ${Math.round(S.curveJudge.a0)}°–${Math.round(S.curveJudge.a1)}°）` : "";
+    fact("我的曲线判断", SHAPES[d.shape] + range);
+    S.phase = "play"; render();
+  });
+  $("curve-close").addEventListener("click", () => { S.phase = "play"; render(); });
+
+  // ================= 修复 =================
+  function openFix() {
+    if (S.phase !== "play") return;
+    const box = $("fix-opts"); box.innerHTML = "";
+    const sus = CANDS.filter(c => S.board[c.id] === "sus").map(c => c.id);
+    for (const f of FIXES) {
+      const l = document.createElement("label"); l.className = "opt";
+      const i = document.createElement("input"); i.type = "radio"; i.name = "fix"; i.value = f.id; i.id = "fx-" + f.id;
+      if (sus.length === 1 && sus[0] === f.id) i.checked = true;
+      const s = document.createElement("span"); s.textContent = f.label + " ";
+      const m = document.createElement("span"); m.className = "m"; m.textContent = "· " + mins(f.cost) + (f.moving ? " · ⚠ 运动部件" : "");
+      l.append(i, s, m); box.appendChild(l);
+    }
+    $("v-first").checked = $("v-trace").checked = $("v-record").checked = false;
+    S.fixMsg = ""; S.phase = "fix"; render();
+  }
+  function submitFix(e) {
+    e.preventDefault();
+    const fx = (document.querySelector('input[name="fix"]:checked') || {}).value;
+    if (!fx) { S.fixMsg = "先选一项处理措施。"; return renderOverlays(); }
+    const F = FIXES.find(f => f.id === fx);
+    if (F.moving && !S.locked) { S.phase = "play"; return redline("你在设备没有停机上锁的情况下，去" + F.label + "。"); }
+    const first = $("v-first").checked, trace = $("v-trace").checked, rec = $("v-record").checked;
+    const correct = fx === S.root;
+    S.fixes.push({ fx, label: F.label, first, trace, rec, correct });
+    let t = F.cost + (first ? 180 : 0) + (trace ? 600 : 0) + (rec ? 30 : 0);
+    if (S.locked) { S.locked = false; t += 60; }
+    addTime(t);
+    fact("修复", F.label + (first ? "；做了首件确认" : "") + (trace ? "；做了追溯" : "") + (rec ? "；记了记录" : ""));
+    if (correct) {
+      S.firstPiece = first; S.traced = trace;
+      if (first) fact("首件确认", "试打一颗：合格。");
+      if (S.root === "program" && !trace) {
+        S.escaped = true;
+        const ev = "06:30 下工序反馈：发现 12 件扭矩不足的产品，都是 01:50 切型号之后打的，要全部拦截返工。";
+        S.events.push(ev); fact("后续事件", ev, true);
+      }
+      S.success = true; S.phase = "review";
+      return render();
+    }
+    S.wrongFix++;
+    if (first) {
+      fact("首件确认", "试打一颗：还是报 TQ-LOW，不合格。", true);
+      S.ng += 1;
+      toast("首件不合格。问题还在，继续查。");
+    } else {
+      const ev = "约 2 小时后又报警：TQ-LOW。这 2 小时生产的产品要全部复查。";
+      S.events.push(ev); fact("后续事件", ev, true);
+      addTime(1800);
+      toast("2 小时后又报警了。问题没解决，继续查。");
+    }
+    S.phase = "play";
+    render();
+  }
+
+  // ================= 复盘 =================
+  function renderReview() {
+    const failed = !!S.redline;
+    const best = BEST[S.root];
+    const real = S.checks.filter(c => !c.redline);
+    const valuable = real.filter(c => c.valuable).length;
+    const r = { redline: failed, total: S.simSec, best: best.total, checks: real.length, valuable, wrongFix: S.wrongFix, engineer: S.engineer, firstPiece: S.firstPiece, escaped: S.escaped };
+    const st = scoreV2(r);
+    const extra = S.simSec - best.total;
+    const j = S.curveJudge;
+    const truth = TRUTH_SHAPE[S.root], [x0, x1] = ANOMALY[S.root];
+    let curveTxt;
+    if (!S.curveSeen) curveTxt = "这一局你没有看曲线。看曲线只要 1 分钟，却能把三种根因分开，是性价比最高的一项检查。";
+    else if (!j) curveTxt = `你看了曲线，但没有下判断。这条曲线是“${SHAPES[truth]}”。`;
+    else {
+      const shapeOk = j.shape === truth;
+      let rangeTxt = "没有框选异常段。";
+      if (j.a0 != null) {
+        const ov = Math.max(0, Math.min(j.a1, x1) - Math.max(j.a0, x0));
+        rangeTxt = ov >= (x1 - x0) * 0.3 ? `框选 ${Math.round(j.a0)}°–${Math.round(j.a1)}°，框到了异常段（约 ${x0}°–${x1}°）。` : `框选 ${Math.round(j.a0)}°–${Math.round(j.a1)}°，没框到异常段（约 ${x0}°–${x1}°）。`;
+      }
+      curveTxt = (shapeOk ? `判断正确：${SHAPES[truth]}。` : `你判断为“${SHAPES[j.shape]}”，实际是“${SHAPES[truth]}”。`) + rangeTxt;
+    }
+    const checksHTML = real.length ? real.map(c => {
+      const tag = c.valuable ? `<span class="chip ok">有价值</span>` : `<span class="chip warn">白查</span>`;
+      const what = [c.confirm ? "直接确认了根因" : "", c.newEx.length ? "排除了：" + c.newEx.map(x => CAND_NAME[x]).join("、") : "", c.lead ? "找到了指向根因的线索" : ""].filter(Boolean).join("；") || "没有排除任何怀疑，也没有找到新线索";
+      return `<li>${esc(c.label)} <span class="t">+${fmt(c.cost)}</span> ${tag}<span class="why">${what}</span></li>`;
+    }).join("") : "<li>没有做检查</li>";
+    const fixHTML = S.fixes.length ? S.fixes.map(f => `<li>${esc(f.label)}${f.first ? " · 首件确认" : ""}${f.trace ? " · 追溯" : ""} <span class="chip ${f.correct ? "ok" : "danger"}">${f.correct ? "对准根因" : "修错了"}</span></li>`).join("") : "";
+    const bestHTML = best.steps.map(s => `<li>${s[0]} <span class="t">+${fmt(s[1])}</span><span class="why">“${s[2]}”</span></li>`).join("");
+    const ded = [];
+    if (failed) ded.push("触碰安全红线，本局 0 星");
+    else {
+      if (S.simSec > best.total * 1.5 + 120) ded.push("停机时长超过老师傅的 1.5 倍，−1 星");
+      if (real.length && valuable / real.length < 0.5) ded.push(`检查效率 ${valuable}/${real.length}，低于一半，−1 星`);
+      if (S.wrongFix) ded.push(`修错 ${S.wrongFix} 次，−${S.wrongFix} 星`);
+      if (S.engineer) ded.push(`叫醒值班工程师 ${S.engineer} 次，−${S.engineer} 星`);
+      if (!S.firstPiece) ded.push("修完没做首件确认，−1 星");
+      if (S.escaped) ded.push("没有追溯，不合格品流到下工序，−1 星");
+    }
+    const boardTxt = S.misExcluded ? `你在怀疑板上一度把真正的原因“${CAND_NAME[S.root]}”排除了。排除之前，要有一项检查真正否定它。` : `怀疑板上你没有误排除真正的原因。`;
+    const dex = ROOTS.map(rt => `<div class="dex-item${rt === S.root ? " cur" : ""}">${miniCurve(rt)}<b>${SHAPES[TRUTH_SHAPE[rt]]} · ${CAND_NAME[rt]}</b><p>${{ slip: "前段正常，后段扭矩上不去、角度还在走。", strip: "扭矩冲上去后突然骤降。", early: "平滑上升，在偏低的扭矩处正常停下。" }[TRUTH_SHAPE[rt]]}</p></div>`).join("");
+    const el = $("review");
+    el.innerHTML = `
+      <span class="eyebrow">复盘 · 装配线 3 号拧紧工位 · 扭矩低于下限</span>
+      <h2 id="review-title">${failed ? "本局失败：触碰安全红线" : S.escaped ? "产线恢复了，但有不合格品流出" : "排障成功，产线恢复"}</h2>
+      <div class="reveal"><span class="eyebrow">这一局的根本原因</span><strong>${CAND_NAME[S.root]}</strong></div>
+      <div class="result">
+        <div><div class="cap">星级</div><div class="stars">${starHTML(st)}</div></div>
+        <div><div class="cap">你的停机时长</div><div class="big">${fmt(S.simSec)}</div></div>
+        <div><div class="cap">老师傅参考</div><div class="big" style="color:var(--muted)">${fmt(best.total)}</div></div>
+        <div><div class="cap">检查效率</div><div class="big">${valuable}/${real.length}</div></div>
+      </div>
+      <p class="small">老师傅参考只算动作耗时，包括修复和验证，不含思考时间。${extra > 0 ? `你多停了 ${fmt(extra)}。` : ""}“有价值”的检查，是指它至少排除了一个怀疑、找到了指向根因的线索，或者直接确认了根因。</p>
+      ${S.events.length ? `<div class="feedback"><b>后续事件：</b>${S.events.map(esc).join(" ")}</div>` : ""}
+      <div class="grid3">
+        <div class="stat"><b>读曲线</b><p>${curveTxt}</p></div>
+        <div class="stat"><b>怀疑板</b><p>${boardTxt}</p></div>
+        <div class="stat"><b>验证</b><p>${failed ? "本局没有走到修复。" : S.firstPiece ? "修完做了首件确认。" : "修完没做首件确认：这次修对了没出事，修错了就会在 2 小时后又报警。"}${S.root === "program" && !failed ? (S.traced ? "做了追溯，没有不合格品流出。" : "程序选错类问题一定要追溯切型号之后的产品。") : ""}</p></div>
+      </div>
+      <div class="compare">
+        <div class="path"><h3>你的路径</h3><ol>${checksHTML}${fixHTML}</ol></div>
+        <div class="path"><h3>老师傅的路径和想法</h3><ol>${bestHTML}</ol></div>
+      </div>
+      ${ded.length ? `<div><h3 style="font-size:14px;margin-bottom:6px">扣分项</h3><ul class="deduct">${ded.map(d => `<li>${d}</li>`).join("")}</ul></div>` : ""}
+      <div><h3 style="font-size:14px;margin-bottom:8px">故障图鉴：同一个报警的三种曲线</h3><div class="dex">${dex}</div></div>
+      <div class="gov">
+        <span>出题：示例师傅</span><span>审核：示例技师 · EHS</span><span>根因卡 v1</span><span>绑定设备：3 号拧紧工位（示例）</span>
+        <button class="btn" type="button" id="report-btn" style="margin-left:auto">我觉得这关有问题</button>
+      </div>
+      <div class="row-end">
+        <span class="small" style="margin-right:auto">再来一局会随机换一个根因。</span>
+        <button class="btn primary" type="button" id="retry-btn">再来一局</button>
+      </div>`;
+    $("retry-btn").addEventListener("click", restart);
+    $("report-btn").addEventListener("click", () => toast("已记录反馈。正式版会推送给出题师傅，原型中不会真的发送。"));
+  }
+  function starHTML(n) { let h = ""; for (let i = 0; i < 3; i++) h += i < n ? "★" : '<span class="off">★</span>'; return h; }
+
+  // ================= 流程 =================
+  function begin() { S.phase = "play"; say("op", CHECKS.q1.res.all); render(); }
+  function restart() { const last = S.root; S = fresh(randomRoot(last)); render(); }
+
+  $("start-btn").addEventListener("click", begin);
+  $("lock-btn").addEventListener("click", toggleLock);
+  $("fix-btn").addEventListener("click", openFix);
+  $("fix-form").addEventListener("submit", submitFix);
+  $("fix-cancel").addEventListener("click", () => { S.phase = "play"; render(); });
+  $("eng-btn").addEventListener("click", callEngineer);
+  $("fail-retry").addEventListener("click", restart);
+  $("fail-review").addEventListener("click", () => { S.phase = "review"; render(); });
+  $("add-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const v = $("add-input").value.trim();
+    if (!v || S.phase !== "play") return;
+    const hit = KEYWORDS.find(([, re]) => re.test(v));
+    if (hit) { setBoard(hit[0], "sus"); toast("已对应到怀疑板上的“" + CAND_NAME[hit[0]] + "”，标为怀疑。"); }
+    else { S.custom.push({ text: v, st: "sus" }); renderBoard(); toast("已记下。这个原因不在本关的候选里，正式版会由 AI 尝试对应。"); }
+    $("add-input").value = "";
+  });
+
+  // ================= 启动 =================
+  function start(data) {
+    if (data && data.S && typeof data.S === "object" && ROOTS.includes(data.S.root)) S = Object.assign(fresh(data.S.root), data.S);
+    render();
+  }
+  window.claude?.hot?.snapshot?.(() => ({ S }));
+  const hot = window.claude?.hot;
+  if (hot?.ready) hot.ready(start); else start(hot?.data ?? {});
+})();
+</script>
